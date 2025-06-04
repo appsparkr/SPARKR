@@ -3,7 +3,7 @@ import axios from 'axios';
 
 // Configuração do Cloudinary para ambiente de produção
 // ATENÇÃO: Substitua "dou4wkpwc" pelo seu CLOUD NAME real do Cloudinary!
-const CLOUDINARY_CLOUD_NAME = "dou4wkpwc"; 
+const CLOUDINARY_CLOUD_NAME = "dou4wpvcg"; 
 const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 // ATENÇÃO: Substitua "sparkr_unsigned" pelo seu UPLOAD PRESET real do Cloudinary!
 const CLOUDINARY_UPLOAD_PRESET = "sparkr_unsigned"; 
