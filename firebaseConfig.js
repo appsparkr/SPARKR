@@ -1,459 +1,210 @@
+// firebaseConfig.js
+import { initializeApp, getApps, getApp } from 'firebase/app';
+// Importe o initializeAuth e getReactNativePersistence
+import { initializeAuth, getReactNativePersistence, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
+import { getFirestore, doc, setDoc, updateDoc, getDoc, collection, query, where, getDocs, orderBy, limit, serverTimestamp, addDoc } from 'firebase/firestore'; // Adicionado addDoc
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Constants from 'expo-constants';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Garanta que esta linha está presente
 
-// Configuração do Firebase
-const apiKey = "AIzaSyAv4DOv6yoI9QcGGyITHimmuZJQb58Ptig";
-const projectId = 'sparkr-app';
-const projectNumber = '278148826560';
+// Sua configuração do Firebase (do seu projeto no console do Firebase)
+const firebaseConfig = {
+  apiKey: "AIzaSyAv4DOv6yoI9QcGGyITHimmuZJQb58Ptig", // Seu API Key do Firebase
+  authDomain: "sparkr-app.firebaseapp.com",
+  projectId: "sparkr-app", // Seu Project ID do Firebase
+  storageBucket: "sparkr-app.appspot.com",
+  messagingSenderId: "278148826560",
+  appId: "1:278148826560:web:43d9b53177651a134a6d71", // Seu App ID do Firebase
+  measurementId: "G-XXXXXXXXXX" // Opcional, se usar Google Analytics
+};
 
-console.log('firebaseConfig - apiKey:', apiKey);
+// Inicializa o Firebase
+// Evita inicializar múltiplas vezes se o app já estiver rodando
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
-// Função para registrar um novo usuário
+// Inicializa o serviço de autenticação com persistência do AsyncStorage
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
+
+// Inicializa os outros serviços
+const db = getFirestore(app);
+const storage = getStorage(app); // Se você for usar o Firebase Storage
+
+console.log("Firebase SDK inicializado.");
+
+// --- Funções de Autenticação ---
+
 export async function signup(email, password, username) {
-  console.log('signup - Chamando API REST com:', { email, username });
-  
-  try {
-    // URL para autenticação do Firebase
-    const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`;
-    
-    // Criar usuário com Authentication REST API
-    const authResponse = await fetch(authUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        returnSecureToken: true,
-      }),
-    });
-    
-    const authData = await authResponse.json();
-    
-    if (authData.error) {
-      console.error('signup - Erro na autenticação:', authData);
-      throw new Error(authData.error?.message || 'Falha ao criar usuário');
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // Salvar dados adicionais do usuário no Firestore
+        // Usamos setDoc para criar o documento com o UID do usuário
+        await setDoc(doc(db, "users", user.uid), {
+            email: user.email,
+            username: username, // O username inicial
+            profileCompleted: false, // Marcamos como falso para ir para CreateProfileScreen
+            createdAt: serverTimestamp(), // Usa o timestamp do servidor
+        });
+
+        // Retorna um objeto de usuário que seu AuthContext espera
+        return {
+            uid: user.uid,
+            email: user.email,
+            username: username,
+            profileCompleted: false,
+            // Não precisamos gerenciar idToken e refreshToken aqui, o SDK faz isso
+        };
+    } catch (error) {
+        console.error("Firebase signup error:", error);
+        throw error;
     }
-    
-    console.log('signup - Usuário criado:', { uid: authData.localId, email: authData.email });
-    
-    // Salvar dados do usuário no Firestore
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${authData.localId}`;
-    
-    const firestoreResponse = await fetch(firestoreUrl, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${authData.idToken}`,
-      },
-      body: JSON.stringify({
-        fields: {
-          username: { stringValue: username },
-          email: { stringValue: email },
-          profileCompleted: { booleanValue: false },
-          createdAt: { integerValue: Date.now() }
-        }
-      }),
-    });
-    
-    if (!firestoreResponse.ok) {
-      const errorData = await firestoreResponse.json();
-      console.error('signup - Erro ao salvar dados no Firestore:', errorData);
-    }
-    
-    // Armazenar token e dados do usuário localmente
-    const userData = {
-      uid: authData.localId,
-      email: authData.email,
-      username,
-      idToken: authData.idToken,
-      refreshToken: authData.refreshToken,
-      profileCompleted: false,
-    };
-    
-    await AsyncStorage.setItem('userData', JSON.stringify(userData));
-    
-    return userData;
-  } catch (error) {
-    console.error('signup - Erro:', error);
-    throw error;
-  }
 }
 
-// Função para fazer login
 export async function login(email, password) {
-  try {
-    // URL para autenticação do Firebase
-    const authUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
-    
-    // Fazer login com Authentication REST API
-    const authResponse = await fetch(authUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        email,
-        password,
-        returnSecureToken: true,
-      }),
-    });
-    
-    const authData = await authResponse.json();
-    
-    if (authData.error) {
-      console.error('login - Erro na autenticação:', authData);
-      throw new Error(authData.error?.message || 'Falha ao fazer login');
+    try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // Buscar dados adicionais do usuário no Firestore
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists()) {
+            const userDataFromFirestore = userDoc.data();
+            return {
+                uid: user.uid,
+                email: user.email,
+                ...userDataFromFirestore, // Inclui username, bio, profileImage, profileCompleted
+            };
+        } else {
+            // Caso o documento do usuário não exista (cenário raro após login)
+            // Retornar dados básicos e profileCompleted como falso para forçar a criação de perfil
+            return {
+                uid: user.uid,
+                email: user.email,
+                profileCompleted: false,
+            };
+        }
+    } catch (error) {
+        console.error("Firebase login error:", error);
+        throw error;
     }
-    
-    // Buscar dados do usuário no Firestore
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${authData.localId}`;
-    
-    const firestoreResponse = await fetch(firestoreUrl, {
-      headers: {
-        'Authorization': `Bearer ${authData.idToken}`,
-      },
-    });
-    
-    let userData = {
-      uid: authData.localId,
-      email: authData.email,
-      idToken: authData.idToken,
-      refreshToken: authData.refreshToken,
-    };
-    
-    if (firestoreResponse.ok) {
-      const firestoreData = await firestoreResponse.json();
-      
-      // Extrair dados do usuário do Firestore
-      if (firestoreData.fields) {
-        userData = {
-          ...userData,
-          username: firestoreData.fields.username?.stringValue || '',
-          bio: firestoreData.fields.bio?.stringValue || '',
-          profileImage: firestoreData.fields.profileImage?.stringValue || '',
-          profileCompleted: firestoreData.fields.profileCompleted?.booleanValue || false,
-        };
-      }
-    }
-    
-    // Armazenar dados do usuário localmente
-    await AsyncStorage.setItem('userData', JSON.stringify(userData));
-    
-    return userData;
-  } catch (error) {
-    console.error('login - Erro:', error);
-    throw error;
-  }
 }
 
-// Função para fazer logout
 export async function logout() {
-  try {
-    // Remover dados do usuário do armazenamento local
-    await AsyncStorage.removeItem('userData');
-    return true;
-  } catch (error) {
-    console.error('logout - Erro:', error);
-    throw error;
-  }
+    try {
+        await signOut(auth);
+        // AsyncStorage será limpo no AuthContext (em um próximo passo)
+        return true;
+    } catch (error) {
+        console.error("Firebase logout error:", error);
+        throw error;
+    }
 }
 
-// Função para atualizar o perfil do usuário
+// --- Funções de Perfil ---
+
 export async function updateUserProfile(uid, profileData) {
-  try {
-    // Obter token de autenticação do armazenamento local
-    const userDataString = await AsyncStorage.getItem('userData');
-    if (!userDataString) {
-      throw new Error('Usuário não autenticado');
+    try {
+        // Atualizar documento do usuário no Firestore
+        const userRef = doc(db, "users", uid);
+        await updateDoc(userRef, {
+            ...profileData, // username, bio, profileImage, profileCompleted
+            updatedAt: serverTimestamp(),
+        });
+
+        // Se você quiser atualizar o display name/photo URL diretamente no Firebase Auth
+        // (Isso é opcional, mas útil para o console do Firebase Auth)
+        if (auth.currentUser && auth.currentUser.uid === uid) {
+            const updateAuthProfile = {};
+            if (profileData.username) updateAuthProfile.displayName = profileData.username;
+            if (profileData.profileImage) updateAuthProfile.photoURL = profileData.profileImage;
+            if (Object.keys(updateAuthProfile).length > 0) {
+                await updateProfile(auth.currentUser, updateAuthProfile);
+            }
+        }
+
+        // Retorna os dados atualizados
+        return { uid, ...profileData };
+
+    } catch (error) {
+        console.error("Firebase updateUserProfile error:", error);
+        throw error;
     }
-    
-    const userData = JSON.parse(userDataString);
-    const idToken = userData.idToken;
-    
-    if (!idToken) {
-      throw new Error('Token de autenticação não disponível');
-    }
-    
-    // URL para o Firestore
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/users/${uid}`;
-    
-    // Preparar os dados para o Firestore
-    const firestoreFields = {};
-    
-    // Converter os dados do perfil para o formato do Firestore
-    Object.keys(profileData).forEach(key => {
-      const value = profileData[key];
-      
-      if (typeof value === 'boolean') {
-        firestoreFields[key] = { booleanValue: value };
-      } else if (typeof value === 'string') {
-        firestoreFields[key] = { stringValue: value };
-      } else if (typeof value === 'number') {
-        firestoreFields[key] = { integerValue: value };
-      }
-    });
-    
-    // Adicionar timestamp de atualização
-    firestoreFields.updatedAt = { integerValue: Date.now() };
-    
-    // Enviar dados para o Firestore
-    const firestoreResponse = await fetch(firestoreUrl, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        fields: firestoreFields
-      }),
-    });
-    
-    if (!firestoreResponse.ok) {
-      const errorData = await firestoreResponse.json();
-      console.error('updateUserProfile - Erro ao salvar perfil:', errorData);
-      throw new Error('Erro ao salvar perfil');
-    }
-    
-    // Atualizar dados do usuário no armazenamento local
-    const updatedUserData = {
-      ...userData,
-      ...profileData
-    };
-    
-    await AsyncStorage.setItem('userData', JSON.stringify(updatedUserData));
-    
-    return updatedUserData;
-  } catch (error) {
-    console.error('updateUserProfile - Erro:', error);
-    throw error;
-  }
 }
 
-// Função para criar uma nova publicação
+export async function getUserProfile(uid) {
+    try {
+        const userDoc = await getDoc(doc(db, "users", uid));
+        if (userDoc.exists()) {
+            return { uid, ...userDoc.data() };
+        }
+        return null; // Usuário não encontrado no Firestore
+    } catch (error) {
+        console.error("Firebase getUserProfile error:", error);
+        throw error;
+    }
+}
+
+// --- Funções de Postagens (Exemplos, você pode expandir) ---
+
 export async function createPost(postData) {
-  try {
-    // Obter token de autenticação do armazenamento local
-    const userDataString = await AsyncStorage.getItem('userData');
-    if (!userDataString) {
-      throw new Error('Usuário não autenticado');
+    try {
+        const docRef = await addDoc(collection(db, "posts"), { // Usando addDoc
+            ...postData,
+            createdAt: serverTimestamp(),
+        });
+        return { id: docRef.id, ...postData };
+    } catch (error) {
+        console.error("Firebase createPost error:", error);
+        throw error;
     }
-    
-    const userData = JSON.parse(userDataString);
-    const idToken = userData.idToken;
-    const uid = userData.uid;
-    
-    if (!idToken || !uid) {
-      throw new Error('Token de autenticação não disponível');
-    }
-    
-    // Gerar ID único para o post
-    const postId = `post_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    
-    // URL para o Firestore
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents/posts/${postId}`;
-    
-    // Preparar os dados para o Firestore
-    const firestoreFields = {
-      userId: { stringValue: uid },
-      username: { stringValue: userData.username || '' },
-      userProfileImage: { stringValue: userData.profileImage || '' },
-      imageUrl: { stringValue: postData.imageUrl || '' },
-      caption: { stringValue: postData.caption || '' },
-      likes: { integerValue: 0 },
-      comments: { integerValue: 0 },
-      createdAt: { integerValue: Date.now() },
-      isStory: { booleanValue: postData.isStory || false }
-    };
-    
-    // Enviar dados para o Firestore
-    const firestoreResponse = await fetch(firestoreUrl, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        fields: firestoreFields
-      }),
-    });
-    
-    if (!firestoreResponse.ok) {
-      const errorData = await firestoreResponse.json();
-      console.error('createPost - Erro ao salvar publicação:', errorData);
-      throw new Error('Erro ao salvar publicação');
-    }
-    
-    return {
-      id: postId,
-      ...postData,
-      userId: uid,
-      username: userData.username,
-      userProfileImage: userData.profileImage,
-      likes: 0,
-      comments: 0,
-      createdAt: Date.now()
-    };
-  } catch (error) {
-    console.error('createPost - Erro:', error);
-    throw error;
-  }
 }
 
-// Função para buscar publicações
 export async function getPosts(isStories = false) {
-  try {
-    // Obter token de autenticação do armazenamento local
-    const userDataString = await AsyncStorage.getItem('userData');
-    if (!userDataString) {
-      throw new Error('Usuário não autenticado');
+    try {
+        const postsCollectionRef = collection(db, "posts");
+        let q;
+        if (isStories) {
+            q = query(postsCollectionRef, where("isStory", "==", true), orderBy("createdAt", "desc"), limit(20));
+        } else {
+            q = query(postsCollectionRef, where("isStory", "==", false), orderBy("createdAt", "desc"), limit(20));
+        }
+
+        const querySnapshot = await getDocs(q);
+        const posts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return posts;
+    } catch (error) {
+        console.error("Firebase getPosts error:", error);
+        throw error;
     }
-    
-    const userData = JSON.parse(userDataString);
-    const idToken = userData.idToken;
-    
-    if (!idToken) {
-      throw new Error('Token de autenticação não disponível');
-    }
-    
-    // URL para o Firestore
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
-    
-    // Criar consulta para buscar publicações
-    const queryData = {
-      structuredQuery: {
-        from: [{ collectionId: 'posts' }],
-        where: {
-          fieldFilter: {
-            field: { fieldPath: 'isStory' },
-            op: 'EQUAL',
-            value: { booleanValue: isStories }
-          }
-        },
-        orderBy: [{ field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' }],
-        limit: 20
-      }
-    };
-    
-    // Enviar consulta para o Firestore
-    const firestoreResponse = await fetch(firestoreUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`,
-      },
-      body: JSON.stringify(queryData),
-    });
-    
-    if (!firestoreResponse.ok) {
-      const errorData = await firestoreResponse.json();
-      console.error('getPosts - Erro na busca:', errorData);
-      throw new Error('Erro ao buscar publicações');
-    }
-    
-    const responseData = await firestoreResponse.json();
-    
-    // Processar resultados
-    const posts = responseData
-      .filter(item => item.document)
-      .map(item => {
-        const postId = item.document.name.split('/').pop();
-        const fields = item.document.fields || {};
-        
-        return {
-          id: postId,
-          userId: fields.userId?.stringValue || '',
-          username: fields.username?.stringValue || '',
-          userProfileImage: fields.userProfileImage?.stringValue || '',
-          imageUrl: fields.imageUrl?.stringValue || '',
-          caption: fields.caption?.stringValue || '',
-          likes: Number(fields.likes?.integerValue || 0),
-          comments: Number(fields.comments?.integerValue || 0),
-          createdAt: Number(fields.createdAt?.integerValue || 0),
-          isStory: fields.isStory?.booleanValue || false
-        };
-      });
-    
-    return posts;
-  } catch (error) {
-    console.error('getPosts - Erro:', error);
-    throw error;
-  }
 }
 
-// Função para buscar usuários
-export async function searchUsers(query) {
-  try {
-    // Obter token de autenticação do armazenamento local
-    const userDataString = await AsyncStorage.getItem('userData');
-    if (!userDataString) {
-      throw new Error('Usuário não autenticado');
+// --- Funções de Busca (Exemplo) ---
+
+export async function searchUsers(queryText) {
+    try {
+        const usersCollectionRef = collection(db, "users");
+        // Nota: Queries LIKE não são suportadas diretamente no Firestore.
+        // Para "GREATER_THAN_OR_EQUAL", o Firestore exige um índice para 'username'
+        // e talvez precise de um `endAt` para um range mais preciso para simular 'startsWith'.
+        // Para busca de "username" simples que começa com a query:
+        const q = query(
+            usersCollectionRef,
+            where("username", ">=", queryText),
+            where("username", "<=", queryText + '\uf8ff'), // \uf8ff é um caractere unicode que permite prefix matching
+            limit(10)
+        );
+
+        const querySnapshot = await getDocs(q);
+        const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return users;
+    } catch (error) {
+        console.error("Firebase searchUsers error:", error);
+        throw error;
     }
-    
-    const userData = JSON.parse(userDataString);
-    const idToken = userData.idToken;
-    
-    if (!idToken) {
-      throw new Error('Token de autenticação não disponível');
-    }
-    
-    // URL para o Firestore
-    const firestoreUrl = `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
-    
-    // Criar consulta para buscar usuários pelo nome de usuário
-    const queryData = {
-      structuredQuery: {
-        from: [{ collectionId: 'users' }],
-        where: {
-          fieldFilter: {
-            field: { fieldPath: 'username' },
-            op: 'GREATER_THAN_OR_EQUAL',
-            value: { stringValue: query }
-          }
-        },
-        limit: 10
-      }
-    };
-    
-    // Enviar consulta para o Firestore
-    const firestoreResponse = await fetch(firestoreUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${idToken}`,
-      },
-      body: JSON.stringify(queryData),
-    });
-    
-    if (!firestoreResponse.ok) {
-      const errorData = await firestoreResponse.json();
-      console.error('searchUsers - Erro na busca:', errorData);
-      throw new Error('Erro ao buscar usuários');
-    }
-    
-    const responseData = await firestoreResponse.json();
-    
-    // Processar resultados
-    const users = responseData
-      .filter(item => item.document)
-      .map(item => {
-        const userId = item.document.name.split('/').pop();
-        const fields = item.document.fields || {};
-        
-        return {
-          uid: userId,
-          username: fields.username?.stringValue || '',
-          profileImage: fields.profileImage?.stringValue || '',
-          bio: fields.bio?.stringValue || '',
-        };
-      });
-    
-    return users;
-  } catch (error) {
-    console.error('searchUsers - Erro:', error);
-    throw error;
-  }
 }
+
+// Exporta instâncias para uso direto se necessário
+export { auth, db, storage, onAuthStateChanged };

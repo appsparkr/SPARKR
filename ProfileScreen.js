@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, Image, TouchableOpacity, ScrollView, FlatList } from 'react-native';
+import { StyleSheet, Text, View, Image, TouchableOpacity, ScrollView, FlatList, SafeAreaView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './AuthContext';
 import Colors from './constants/Colors';
@@ -12,10 +12,10 @@ const ProfileScreen = ({ navigation, route }) => {
   const [highlights, setHighlights] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [profileData, setProfileData] = useState(null);
-  
+
   // Usar o usuário da rota se disponível, caso contrário usar o usuário atual
   const profileUser = route?.params?.user || currentUser || profileData;
-  
+
   useEffect(() => {
     // Carregar dados do perfil do armazenamento local
     const loadProfileData = async () => {
@@ -30,11 +30,11 @@ const ProfileScreen = ({ navigation, route }) => {
         console.error('ProfileScreen - Erro ao carregar dados do perfil:', error);
       }
     };
-    
+
     if (!currentUser && !route?.params?.user) {
       loadProfileData();
     }
-    
+
     // Carregar posts e destaques do usuário
     const loadUserContent = async () => {
       setIsLoading(true);
@@ -46,7 +46,7 @@ const ProfileScreen = ({ navigation, route }) => {
           { id: '2', title: 'Comida', image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=200' },
           { id: '3', title: 'Amigos', image: 'https://images.unsplash.com/photo-1543807535-eceef0bc6599?w=200' },
         ];
-        
+
         const demoPosts = [
           { id: '1', image: 'https://images.unsplash.com/photo-1527631746610-bca00a040d60?w=400' },
           { id: '2', image: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400' },
@@ -55,7 +55,7 @@ const ProfileScreen = ({ navigation, route }) => {
           { id: '5', image: 'https://images.unsplash.com/photo-1554080353-a576cf803bda?w=400' },
           { id: '6', image: 'https://images.unsplash.com/photo-1513694203232-719a280e022f?w=400' },
         ];
-        
+
         setHighlights(demoHighlights);
         setPosts(demoPosts);
       } catch (error) {
@@ -64,15 +64,15 @@ const ProfileScreen = ({ navigation, route }) => {
         setIsLoading(false);
       }
     };
-    
+
     loadUserContent();
   }, [currentUser, route?.params?.user]);
-  
+
   const handleEditProfile = () => {
-    // Navegar para a tela de edição de perfil
-    navigation.navigate('EditProfile');
+    // Navegar para a tela de edição de perfil, que está no mesmo Stack Navigator aninhado
+    navigation.navigate('EditProfile'); // <--- CORRIGIDO AQUI
   };
-  
+
   const renderHighlightItem = ({ item }) => (
     <TouchableOpacity style={styles.highlightItem}>
       <View style={styles.highlightImageContainer}>
@@ -81,13 +81,13 @@ const ProfileScreen = ({ navigation, route }) => {
       <Text style={styles.highlightTitle}>{item.title}</Text>
     </TouchableOpacity>
   );
-  
+
   const renderPostItem = ({ item }) => (
     <TouchableOpacity style={styles.postItem}>
       <Image source={{ uri: item.image }} style={styles.postImage} />
     </TouchableOpacity>
   );
-  
+
   const renderEmptyContent = () => (
     <View style={styles.emptyContainer}>
       <Ionicons name="images-outline" size={48} color={Colors.textSecondary} />
@@ -105,27 +105,28 @@ const ProfileScreen = ({ navigation, route }) => {
       </View>
     );
   }
-  
+
   console.log('ProfileScreen - Renderizando com dados de perfil:', profileUser);
-  
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{profileUser?.username || 'Perfil'}</Text>
+        {/* O ícone de configurações deve navegar para EditProfile se for o perfil do usuário logado */}
         {profileUser?.uid === currentUser?.uid && (
           <TouchableOpacity onPress={handleEditProfile}>
             <Ionicons name="settings-outline" size={24} color={Colors.text} />
           </TouchableOpacity>
         )}
       </View>
-      
+
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.profileInfo}>
           <View style={styles.profileImageContainer}>
             {profileUser?.profileImage ? (
-              <Image 
-                source={{ uri: profileUser.profileImage }} 
-                style={styles.profileImage} 
+              <Image
+                source={{ uri: profileUser.profileImage }}
+                style={styles.profileImage}
               />
             ) : (
               <View style={[styles.profileImage, styles.noProfileImage]}>
@@ -133,7 +134,7 @@ const ProfileScreen = ({ navigation, route }) => {
               </View>
             )}
           </View>
-          
+
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>0</Text>
@@ -149,18 +150,19 @@ const ProfileScreen = ({ navigation, route }) => {
             </View>
           </View>
         </View>
-        
+
         <View style={styles.bioContainer}>
           <Text style={styles.username}>{profileUser?.username || 'Usuário'}</Text>
           <Text style={styles.bio}>{profileUser?.bio || 'Sem biografia'}</Text>
         </View>
-        
+
+        {/* O botão "Editar Perfil" também deve navegar para EditProfile */}
         {profileUser?.uid === currentUser?.uid && (
           <TouchableOpacity style={styles.editProfileButton} onPress={handleEditProfile}>
             <Text style={styles.editProfileButtonText}>Editar Perfil</Text>
           </TouchableOpacity>
         )}
-        
+
         <View style={styles.highlightsContainer}>
           <FlatList
             data={highlights}
@@ -179,7 +181,7 @@ const ProfileScreen = ({ navigation, route }) => {
             }
           />
         </View>
-        
+
         <View style={styles.contentTabsContainer}>
           <TouchableOpacity
             style={[styles.tabButton, activeTab === 'posts' && styles.activeTabButton]}
@@ -202,7 +204,7 @@ const ProfileScreen = ({ navigation, route }) => {
             />
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.contentContainer}>
           {activeTab === 'posts' && posts.length > 0 ? (
             <FlatList
@@ -219,7 +221,7 @@ const ProfileScreen = ({ navigation, route }) => {
           )}
         </View>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 };
 

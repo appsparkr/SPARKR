@@ -1,59 +1,81 @@
 import axios from 'axios';
-// import * as FileSystem from 'expo-file-system'; // Não é estritamente necessário para este caso, mas útil para manipulação de arquivos
 
 // Configuração do Cloudinary para ambiente de produção
-// ATENÇÃO: Substitua "dou4wkpwc" pelo seu CLOUD NAME real do Cloudinary!
-const CLOUDINARY_CLOUD_NAME = "dou4wpvcg"; 
-const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
+// ATENÇÃO: Substitua "dou4wpvcg" pelo seu CLOUD NAME real do Cloudinary!
+const CLOUDINARY_CLOUD_NAME = "dou4wpvcg";
+const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/upload`;
 // ATENÇÃO: Substitua "sparkr_unsigned" pelo seu UPLOAD PRESET real do Cloudinary!
-const CLOUDINARY_UPLOAD_PRESET = "sparkr_unsigned"; 
+const CLOUDINARY_UPLOAD_PRESET = "sparkr_unsigned";
 
-// A função imageToBase64 foi removida, pois não estava sendo usada e não era uma conversão real para base64.
-// O ImagePicker já fornece um URI de arquivo que pode ser usado diretamente.
-
-// Função principal para upload de imagem
-export const uploadImage = async (imageUri) => {
-  if (!imageUri) {
-    console.log('uploadImage - Nenhuma imagem fornecida');
+// Função principal para upload de mídia (imagem ou vídeo)
+export const uploadImage = async (mediaUri, mediaType = 'image') => {
+  if (!mediaUri) {
+    console.log('uploadImage - Nenhuma mídia fornecida');
     return null;
   }
 
-  console.log('uploadImage - Iniciando upload da imagem para Cloudinary. URI:', imageUri);
+  console.log(`uploadImage - Iniciando upload de ${mediaType} para Cloudinary. URI:`, mediaUri);
 
   try {
     const formData = new FormData();
 
     // Extrai o nome do arquivo e a extensão do URI para usar no FormData
-    const filename = imageUri.split('/').pop(); // Pega a última parte do URI como nome do arquivo
-    const match = /\.(\w+)$/.exec(filename); // Extrai a extensão (ex: jpg, png)
-    const fileExtension = match ? match[1] : 'jpeg'; // Se não encontrar, assume jpeg
-    
-    // Tenta inferir o tipo MIME da imagem
-    const imageType = `image/${fileExtension === 'jpg' ? 'jpeg' : fileExtension}`;
+    const filename = mediaUri.split('/').pop(); // Pega a última parte do URI como nome do arquivo
+    const match = /\.(\w+)$/.exec(filename); // Extrai a extensão (ex: jpg, png, mp4)
+    const fileExtension = match ? match[1] : mediaType === 'video' ? 'mp4' : 'jpeg'; // Se não encontrar, assume mp4 para vídeo ou jpeg para imagem
+
+    // Tenta inferir o tipo MIME da mídia
+    let mimeType;
+    if (mediaType === 'video') {
+      mimeType = `video/${fileExtension === 'mov' ? 'quicktime' : fileExtension}`;
+    } else {
+      mimeType = `image/${fileExtension === 'jpg' ? 'jpeg' : fileExtension}`;
+    }
 
     // Adiciona o arquivo ao FormData.
     // Para React Native, o objeto { uri, type, name } é a forma correta de enviar um arquivo.
     formData.append("file", {
-      uri: imageUri,
-      type: imageType, // Tipo MIME da imagem (ex: image/jpeg, image/png)
-      name: filename, // Nome do arquivo (ex: my_photo.jpg)
+      uri: mediaUri,
+      type: mimeType, // Tipo MIME da mídia
+      name: filename, // Nome do arquivo
     });
 
     // Adiciona o preset de upload não autenticado
     formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
 
+    // Adiciona parâmetros específicos para vídeo, se aplicável
+    if (mediaType === 'video') {
+      // Configurações para otimização de vídeo
+      formData.append("resource_type", "video");
+      formData.append("eager", "c_scale,w_640");
+      formData.append("eager_async", "true");
+      formData.append("eager_notification_url", "");
+    }
+
     // Fazer upload para o Cloudinary usando axios
     const response = await axios.post(CLOUDINARY_URL, formData, {
       headers: {
         // É crucial definir 'Content-Type' como 'multipart/form-data' para uploads de arquivos
-        "Content-Type": "multipart/form-data", 
+        "Content-Type": "multipart/form-data",
       },
     });
 
-    console.log('uploadImage - Upload bem-sucedido:', response.data.secure_url);
+    console.log(`uploadImage - Upload de ${mediaType} bem-sucedido:`, response.data.secure_url);
+    
+    // Para vídeos, retornar informações adicionais
+    if (mediaType === 'video') {
+      return {
+        url: response.data.secure_url,
+        duration: response.data.duration || 0,
+        thumbnail: response.data.thumbnail_url || response.data.secure_url,
+        format: response.data.format || 'mp4'
+      };
+    }
+    
+    // Para imagens, retornar apenas a URL
     return response.data.secure_url;
   } catch (error) {
-    console.error('uploadImage - Erro ao fazer upload da imagem:', error);
+    console.error(`uploadImage - Erro ao fazer upload de ${mediaType}:`, error);
 
     // --- ADICIONADO: Log mais detalhado do erro para depuração ---
     if (error.response) {
@@ -72,19 +94,34 @@ export const uploadImage = async (imageUri) => {
 
     // Fallback para ambiente Snack Expo (mantido do seu código original)
     if (process.env.EXPO_PUBLIC_ENVIRONMENT === 'snack') {
-      console.log('uploadImage - Usando URL de imagem pública como fallback (ambiente Snack)');
-      const demoImages = [
-        'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
-        'https://res.cloudinary.com/demo/image/upload/c_scale,w_200/v1582134005/photo-1548407260-da850faa41e3_kninfp.jpg',
-        'https://res.cloudinary.com/demo/image/upload/c_scale,w_200/v1582134005/photo-1582134133410-c9f0d35500dd_aldcbh.jpg',
-        'https://res.cloudinary.com/demo/image/upload/c_scale,w_200/v1582134005/photo-1582134133049-30b31e0e0b0e_yydpxw.jpg'
-      ];
-      const randomIndex = Math.floor(Math.random() * demoImages.length);
-      return demoImages[randomIndex];
+      console.log(`uploadImage - Usando URL de ${mediaType} pública como fallback (ambiente Snack)`);
+      
+      if (mediaType === 'video') {
+        const demoVideos = [
+          'https://res.cloudinary.com/demo/video/upload/v1689413302/samples/sea-turtle.mp4',
+          'https://res.cloudinary.com/demo/video/upload/v1689413302/samples/elephants.mp4'
+        ];
+        const randomIndex = Math.floor(Math.random() * demoVideos.length);
+        return {
+          url: demoVideos[randomIndex],
+          duration: 10,
+          thumbnail: 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
+          format: 'mp4'
+        };
+      } else {
+        const demoImages = [
+          'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
+          'https://res.cloudinary.com/demo/image/upload/c_scale,w_200/v1582134005/photo-1548407260-da850faa41e3_kninfp.jpg',
+          'https://res.cloudinary.com/demo/image/upload/c_scale,w_200/v1582134005/photo-1582134133410-c9f0d35500dd_aldcbh.jpg',
+          'https://res.cloudinary.com/demo/image/upload/c_scale,w_200/v1582134005/photo-1582134133049-30b31e0e0b0e_yydpxw.jpg'
+        ];
+        const randomIndex = Math.floor(Math.random() * demoImages.length);
+        return demoImages[randomIndex];
+      }
     }
 
-    // Re-lança o erro para ser tratado pela função chamadora (handleCreateProfile)
-    throw error; 
+    // Re-lança o erro para ser tratado pela função chamadora
+    throw error;
   }
 };
 
@@ -98,4 +135,19 @@ export const getPublicImageUrl = () => {
   ];
   const randomIndex = Math.floor(Math.random() * demoImages.length);
   return demoImages[randomIndex];
+};
+
+// Função para obter URL de vídeo público (para testes)
+export const getPublicVideoUrl = () => {
+  const demoVideos = [
+    'https://res.cloudinary.com/demo/video/upload/v1689413302/samples/sea-turtle.mp4',
+    'https://res.cloudinary.com/demo/video/upload/v1689413302/samples/elephants.mp4'
+  ];
+  const randomIndex = Math.floor(Math.random() * demoVideos.length);
+  return {
+    url: demoVideos[randomIndex],
+    duration: 10,
+    thumbnail: 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg',
+    format: 'mp4'
+  };
 };

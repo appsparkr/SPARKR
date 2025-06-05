@@ -13,13 +13,12 @@ const CreateProfileScreen = ({ navigation }) => {
   const [bio, setBio] = useState('');
   const [profileImage, setProfileImage] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [loadingPermissions, setLoadingPermissions] = useState(false); // Novo estado para permissões
+  const [loadingPermissions, setLoadingPermissions] = useState(false);
 
   console.log('CreateProfileScreen - Rendering...');
   console.log('CreateProfileScreen - currentUser:', currentUser);
 
   useEffect(() => {
-    // Preencher campos com dados existentes, se disponíveis
     if (currentUser) {
       if (currentUser.username) {
         setUsername(currentUser.username);
@@ -31,11 +30,8 @@ const CreateProfileScreen = ({ navigation }) => {
         setProfileImage(currentUser.profileImage);
       }
     }
-    // Requisição de permissão ao montar o componente (opcional, pode ser no pickImage)
-    // requestImagePickerPermissions(); 
   }, [currentUser]);
 
-  // Função para solicitar permissões de mídia
   const requestImagePickerPermissions = async () => {
     setLoadingPermissions(true);
     try {
@@ -55,19 +51,18 @@ const CreateProfileScreen = ({ navigation }) => {
   };
 
   const pickImage = async () => {
-    // Verifica e solicita permissões antes de abrir a galeria
     const hasPermission = await requestImagePickerPermissions();
     if (!hasPermission) {
-      return; // Sai da função se a permissão não foi concedida
+      return;
     }
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images, // Apenas imagens
-        allowsEditing: true, // Permite editar/cortar a imagem
-        aspect: [1, 1], // Proporção 1:1 para foto de perfil
-        quality: 0.7, // Qualidade da imagem (pode ajustar, 0.7 é um bom equilíbrio)
-        selectionLimit: 1, // Garante que apenas uma imagem possa ser selecionada
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        selectionLimit: 1,
       });
 
       if (!result.canceled) {
@@ -117,22 +112,14 @@ const CreateProfileScreen = ({ navigation }) => {
       await updateUserProfile(profileData);
       console.log('handleCreateProfile - Perfil atualizado com sucesso');
 
-      const availableScreens = navigation.getState()?.routeNames || [];
-      console.log('handleCreateProfile - Telas disponíveis:', availableScreens);
+      // *** SEÇÃO CORRIGIDA PARA NAVEGAÇÃO ***
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainApp' }], // Garante que a navegação vá para a tela principal com as tabs
+      });
+      console.log('handleCreateProfile - Navegando para MainApp (Tabs)');
+      // *** FIM DA SEÇÃO CORRIGIDA ***
 
-      if (availableScreens.includes('Main')) {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Main' }],
-        });
-        console.log('handleCreateProfile - Navegando para Main');
-      } else {
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Profile' }],
-        });
-        console.log('handleCreateProfile - Navegando para Profile (fallback)');
-      }
     } catch (error) {
       console.error('handleCreateProfile - Erro ao criar perfil:', error);
       Alert.alert('Erro', 'Houve um problema ao criar o perfil: ' + error.message);
@@ -150,13 +137,13 @@ const CreateProfileScreen = ({ navigation }) => {
       <TouchableOpacity
         style={[styles.profileImagePicker]}
         onPress={pickImage}
-        disabled={loadingPermissions || uploading} // Desabilita enquanto busca permissões ou faz upload
+        disabled={loadingPermissions || uploading}
       >
         {profileImage ? (
           <Image source={{ uri: profileImage }} style={styles.profileImage} />
         ) : (
           <View style={styles.profileImagePlaceholder}>
-            {loadingPermissions ? ( // Mostra um spinner enquanto busca permissões
+            {loadingPermissions ? (
               <ActivityIndicator size="small" color={Colors.textSecondary} />
             ) : (
               <Ionicons name="person-circle-outline" size={48} color={Colors.textSecondary} />
@@ -246,7 +233,7 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   input: {
-    backgroundColor: Colors.inputBackground,
+    backgroundColor: Colors.card,
     borderRadius: 8,
     padding: 15,
     color: Colors.text,

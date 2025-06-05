@@ -1,6 +1,18 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Image, TextInput, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import React, { useState, useRef } from 'react';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
+  Image,
+  TextInput,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+  Platform
+} from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Video } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './AuthContext';
 import Colors from './constants/Colors';
@@ -8,54 +20,129 @@ import { uploadImage } from './cloudinaryConfig';
 
 const AddContentScreen = () => {
   const { createPost, currentUser } = useAuth();
-  const [image, setImage] = useState(null);
+  const [media, setMedia] = useState(null);
+  const [mediaType, setMediaType] = useState(null); // 'image' ou 'video'
   const [caption, setCaption] = useState('');
   const [isStory, setIsStory] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const videoRef = useRef(null);
 
-  const pickImage = async () => {
+  const pickMedia = async (type = 'all') => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
       Alert.alert('Permissão negada', 'É necessário permitir o acesso à galeria.');
       return;
     }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    let options = {
       allowsEditing: true,
-      aspect: [4, 3],
       quality: 1,
-    });
+    };
+
+    if (type === 'image') {
+      options.mediaTypes = ImagePicker.MediaTypeOptions.Images;
+    } else if (type === 'video') {
+      options.mediaTypes = ImagePicker.MediaTypeOptions.Videos;
+      options.videoMaxDuration = 60; // Limite de 60 segundos para vídeos
+    } else {
+      options.mediaTypes = ImagePicker.MediaTypeOptions.All;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync(options);
 
     if (!result.canceled) {
-      setImage(result.assets[0].uri);
+      const selectedAsset = result.assets[0];
+      setMedia(selectedAsset.uri);
+      
+      // Determinar o tipo de mídia
+      if (selectedAsset.type === 'video') {
+        setMediaType('video');
+      } else {
+        setMediaType('image');
+      }
+    }
+  };
+
+  const captureMedia = async (type = 'all') => {
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permissão negada', 'É necessário permitir o acesso à câmera.');
+      return;
+    }
+
+    let options = {
+      allowsEditing: true,
+      quality: 1,
+    };
+
+    if (type === 'image') {
+      options.mediaTypes = ImagePicker.MediaTypeOptions.Images;
+    } else if (type === 'video') {
+      options.mediaTypes = ImagePicker.MediaTypeOptions.Videos;
+      options.videoMaxDuration = 60; // Limite de 60 segundos para vídeos
+    } else {
+      options.mediaTypes = ImagePicker.MediaTypeOptions.All;
+    }
+
+    const result = await ImagePicker.launchCameraAsync(options);
+
+    if (!result.canceled) {
+      const selectedAsset = result.assets[0];
+      setMedia(selectedAsset.uri);
+      
+      // Determinar o tipo de mídia
+      if (selectedAsset.type === 'video') {
+        setMediaType('video');
+      } else {
+        setMediaType('image');
+      }
     }
   };
 
   const handlePost = async () => {
-    if (!image) {
-      Alert.alert('Erro', 'Selecione uma imagem para publicar.');
+    if (!media) {
+      Alert.alert('Erro', 'Selecione uma imagem ou vídeo para publicar.');
       return;
     }
 
     setUploading(true);
+    setUploadProgress(0);
+
     try {
-      // Upload da imagem para o Cloudinary
-      const imageUrl = await uploadImage(image);
+      // Simular progresso de upload
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 95) {
+            clearInterval(progressInterval);
+            return prev;
+          }
+          return prev + 5;
+        });
+      }, 300);
+
+      // Upload da mídia para o Cloudinary
+      const mediaUrl = await uploadImage(media);
       
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+
       // Criar post no Firebase
       await createPost({
-        imageUrl,
+        mediaUrl,
+        mediaType,
         caption,
         isStory
       });
-      
+
       // Limpar formulário
-      setImage(null);
+      setMedia(null);
+      setMediaType(null);
       setCaption('');
-      
+      setUploadProgress(0);
+
       Alert.alert(
-        'Sucesso', 
+        'Sucesso',
         isStory ? 'Seu story foi publicado com sucesso!' : 'Sua publicação foi criada com sucesso!',
         [{ text: 'OK' }]
       );
@@ -67,34 +154,107 @@ const AddContentScreen = () => {
     }
   };
 
+  const renderMediaPreview = () => {
+    if (!media) return null;
+
+    if (mediaType === 'video') {
+      return (
+        <View style={styles.mediaPreview}>
+          <Video
+            ref={videoRef}
+            source={{ uri: media }}
+            style={styles.videoPreview}
+            useNativeControls
+            resizeMode="contain"
+            isLooping
+          />
+          <View style={styles.videoControls}>
+            <TouchableOpacity 
+              style={styles.videoControlButton}
+              onPress={() => videoRef.current?.playAsync()}
+            >
+              <Ionicons name="play" size={24} color={Colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.videoControlButton}
+              onPress={() => videoRef.current?.pauseAsync()}
+            >
+              <Ionicons name="pause" size={24} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    } else {
+      return (
+        <Image source={{ uri: media }} style={styles.imagePreview} />
+      );
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.typeButton, !isStory && styles.activeTypeButton]}
           onPress={() => setIsStory(false)}
         >
           <Text style={[styles.typeButtonText, !isStory && styles.activeTypeButtonText]}>Post</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.typeButton, isStory && styles.activeTypeButton]}
           onPress={() => setIsStory(true)}
         >
           <Text style={[styles.typeButtonText, isStory && styles.activeTypeButtonText]}>Story</Text>
         </TouchableOpacity>
       </View>
-      
-      <TouchableOpacity style={styles.imageContainer} onPress={pickImage}>
-        {image ? (
-          <Image source={{ uri: image }} style={styles.image} />
-        ) : (
-          <View style={styles.imagePlaceholder}>
-            <Ionicons name="image-outline" size={48} color={Colors.textSecondary} />
-            <Text style={styles.placeholderText}>Toque para selecionar uma imagem</Text>
+
+      {media ? (
+        <View style={styles.mediaContainer}>
+          {renderMediaPreview()}
+          <TouchableOpacity style={styles.changeMediaButton} onPress={() => pickMedia()}>
+            <Text style={styles.changeMediaButtonText}>Alterar mídia</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.mediaPickerContainer}>
+          <View style={styles.mediaTypeSelector}>
+            <TouchableOpacity 
+              style={styles.mediaTypeButton} 
+              onPress={() => pickMedia('image')}
+            >
+              <Ionicons name="image-outline" size={32} color={Colors.primary} />
+              <Text style={styles.mediaTypeText}>Foto da Galeria</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.mediaTypeButton} 
+              onPress={() => pickMedia('video')}
+            >
+              <Ionicons name="videocam-outline" size={32} color={Colors.primary} />
+              <Text style={styles.mediaTypeText}>Vídeo da Galeria</Text>
+            </TouchableOpacity>
           </View>
-        )}
-      </TouchableOpacity>
-      
+          
+          <View style={styles.mediaTypeSelector}>
+            <TouchableOpacity 
+              style={styles.mediaTypeButton} 
+              onPress={() => captureMedia('image')}
+            >
+              <Ionicons name="camera-outline" size={32} color={Colors.primary} />
+              <Text style={styles.mediaTypeText}>Tirar Foto</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={styles.mediaTypeButton} 
+              onPress={() => captureMedia('video')}
+            >
+              <Ionicons name="recording-outline" size={32} color={Colors.primary} />
+              <Text style={styles.mediaTypeText}>Gravar Vídeo</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {!isStory && (
         <View style={styles.captionContainer}>
           <TextInput
@@ -108,11 +268,28 @@ const AddContentScreen = () => {
           />
         </View>
       )}
-      
+
+      {uploading && (
+        <View style={styles.progressContainer}>
+          <View style={styles.progressBarBackground}>
+            <View 
+              style={[
+                styles.progressBarFill, 
+                { width: `${uploadProgress}%` }
+              ]} 
+            />
+          </View>
+          <Text style={styles.progressText}>{uploadProgress}%</Text>
+        </View>
+      )}
+
       <TouchableOpacity
-        style={[styles.postButton, { opacity: uploading ? 0.7 : 1 }]}
+        style={[
+          styles.postButton,
+          { opacity: uploading || !media ? 0.7 : 1 }
+        ]}
         onPress={uploading ? null : handlePost}
-        disabled={uploading || !image}
+        disabled={uploading || !media}
       >
         {uploading ? (
           <ActivityIndicator color="#000" />
@@ -153,29 +330,71 @@ const styles = StyleSheet.create({
     color: Colors.primary,
     fontWeight: 'bold',
   },
-  imageContainer: {
-    aspectRatio: 1,
+  mediaContainer: {
     marginVertical: 20,
     marginHorizontal: 10,
     borderRadius: 10,
     overflow: 'hidden',
     backgroundColor: Colors.inputBackground,
   },
-  image: {
-    width: '100%',
-    height: '100%',
+  mediaPickerContainer: {
+    marginVertical: 20,
+    marginHorizontal: 10,
+    borderRadius: 10,
+    padding: 20,
+    backgroundColor: Colors.inputBackground,
   },
-  imagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
+  mediaTypeSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 20,
+  },
+  mediaTypeButton: {
     alignItems: 'center',
+    padding: 15,
+    borderRadius: 10,
+    backgroundColor: Colors.background,
+    width: '45%',
   },
-  placeholderText: {
+  mediaTypeText: {
     marginTop: 10,
-    color: Colors.textSecondary,
-    textAlign: 'center',
-    paddingHorizontal: 20,
+    color: Colors.text,
+    fontWeight: '500',
+  },
+  imagePreview: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 10,
+  },
+  videoPreview: {
+    width: '100%',
+    aspectRatio: 16/9,
+    borderRadius: 10,
+  },
+  mediaPreview: {
+    width: '100%',
+  },
+  videoControls: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    padding: 10,
+  },
+  videoControlButton: {
+    marginHorizontal: 10,
+    padding: 10,
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 20,
+  },
+  changeMediaButton: {
+    backgroundColor: Colors.background,
+    padding: 10,
+    alignItems: 'center',
+    marginTop: 10,
+    borderRadius: 5,
+  },
+  changeMediaButtonText: {
+    color: Colors.primary,
+    fontWeight: 'bold',
   },
   captionContainer: {
     marginHorizontal: 10,
@@ -188,6 +407,25 @@ const styles = StyleSheet.create({
     color: Colors.text,
     minHeight: 100,
     textAlignVertical: 'top',
+  },
+  progressContainer: {
+    marginHorizontal: 10,
+    marginBottom: 10,
+  },
+  progressBarBackground: {
+    height: 10,
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 5,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: Colors.primary,
+  },
+  progressText: {
+    textAlign: 'center',
+    marginTop: 5,
+    color: Colors.text,
   },
   postButton: {
     backgroundColor: Colors.primary,

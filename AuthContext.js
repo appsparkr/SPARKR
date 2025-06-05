@@ -1,173 +1,204 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Alert } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as firebase from './firebaseConfig';
+// firebaseConfig.js
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, updateProfile } from 'firebase/auth';
+import { getFirestore, doc, setDoc, updateDoc, getDoc, collection, query, where, getDocs, orderBy, limit, serverTimestamp } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import Constants from 'expo-constants'; // Para acessar variáveis de ambiente do Expo
 
-// Criar o contexto de autenticação
-const AuthContext = createContext();
-
-// Hook personalizado para usar o contexto de autenticação
-export const useAuth = () => useContext(AuthContext);
-
-// Provedor de autenticação
-export const AuthProvider = ({ children }) => {
-  const [currentUser, setCurrentUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  // Verificar estado de autenticação quando o componente montar
-  useEffect(() => {
-    console.log('AuthContext - Verificando estado de autenticação...');
-    
-    const checkAuthState = async () => {
-      try {
-        // Verificar se há um usuário armazenado localmente
-        const userDataString = await AsyncStorage.getItem('userData');
-        if (userDataString) {
-          const userData = JSON.parse(userDataString);
-          setCurrentUser(userData);
-          console.log('AuthContext - Usuário encontrado no armazenamento local:', userData);
-        }
-        setLoading(false);
-      } catch (error) {
-        console.error('AuthContext - Erro ao verificar autenticação:', error);
-        setCurrentUser(null);
-        setLoading(false);
-      }
-    };
-
-    checkAuthState();
-  }, []);
-
-  // Função para registrar um novo usuário
-  const signup = async (email, password, username) => {
-    console.log('AuthContext - Registrando novo usuário:', { email, username });
-    
-    try {
-      // Chamar a função de signup do Firebase
-      const userData = await firebase.signup(email, password, username);
-      
-      // Atualizar o estado do usuário atual
-      setCurrentUser(userData);
-      
-      return userData;
-    } catch (error) {
-      console.error('AuthContext - Erro ao registrar:', error);
-      throw error;
-    }
-  };
-
-  // Função para fazer login
-  const login = async (email, password) => {
-    try {
-      // Chamar a função de login do Firebase
-      const userData = await firebase.login(email, password);
-      
-      // Atualizar o estado do usuário atual
-      setCurrentUser(userData);
-      
-      return userData;
-    } catch (error) {
-      console.error('AuthContext - Erro ao fazer login:', error);
-      throw error;
-    }
-  };
-
-  // Função para fazer logout
-  const logout = async () => {
-    try {
-      // Chamar a função de logout do Firebase
-      await firebase.logout();
-      
-      // Limpar o estado do usuário atual
-      setCurrentUser(null);
-    } catch (error) {
-      console.error('AuthContext - Erro ao fazer logout:', error);
-      throw error;
-    }
-  };
-
-  // Função para atualizar o perfil do usuário
-  const updateUserProfile = async (profileData) => {
-    try {
-      if (!currentUser) {
-        throw new Error('Nenhum usuário autenticado');
-      }
-      
-      // Chamar a função de atualização de perfil do Firebase
-      const updatedUser = await firebase.updateUserProfile(currentUser.uid, profileData);
-      
-      // Atualizar o estado do usuário atual com os novos dados
-      setCurrentUser(prev => ({
-        ...prev,
-        ...profileData
-      }));
-      
-      return updatedUser;
-    } catch (error) {
-      console.error('AuthContext - Erro ao atualizar perfil:', error);
-      throw error;
-    }
-  };
-
-  // Função para criar uma nova publicação
-  const createPost = async (postData) => {
-    try {
-      if (!currentUser) {
-        throw new Error('Nenhum usuário autenticado');
-      }
-      
-      // Chamar a função de criação de post do Firebase
-      const post = await firebase.createPost(postData);
-      
-      return post;
-    } catch (error) {
-      console.error('AuthContext - Erro ao criar publicação:', error);
-      throw error;
-    }
-  };
-
-  // Função para buscar publicações
-  const getPosts = async (isStories = false) => {
-    try {
-      // Chamar a função de busca de posts do Firebase
-      const posts = await firebase.getPosts(isStories);
-      
-      return posts;
-    } catch (error) {
-      console.error('AuthContext - Erro ao buscar publicações:', error);
-      throw error;
-    }
-  };
-
-  // Função para buscar usuários
-  const searchUsers = async (query) => {
-    try {
-      // Chamar a função de busca de usuários do Firebase
-      const users = await firebase.searchUsers(query);
-      
-      return users;
-    } catch (error) {
-      console.error('AuthContext - Erro ao buscar usuários:', error);
-      throw error;
-    }
-  };
-
-  // Valor do contexto
-  const value = {
-    currentUser,
-    loading,
-    signup,
-    login,
-    logout,
-    updateUserProfile,
-    createPost,
-    getPosts,
-    searchUsers
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {children}
-    </AuthContext.Provider>
-  );
+// Sua configuração do Firebase (deve ser a do seu projeto no console do Firebase)
+const firebaseConfig = {
+  apiKey: "AIzaSyAv4DOv6yoI9QcGGyITHimmuZJQb58Ptig",
+  authDomain: "sparkr-app.firebaseapp.com",
+  projectId: "sparkr-app",
+  storageBucket: "sparkr-app.appspot.com",
+  messagingSenderId: "278148826560",
+  appId: "1:278148826560:android:78690915d986d6c39cf425", // <-- CORREÇÃO AQUI
+  measurementId: "G-XXXXXXXXXX"
 };
+
+// Inicializa o Firebase
+// Evita inicializar múltiplas vezes se o app já estiver rodando
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+
+// Inicializa os serviços
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app); // Se você for usar o Firebase Storage
+
+console.log("Firebase SDK inicializado.");
+
+// --- Funções de Autenticação ---
+
+export async function signup(email, password, username) {
+    try {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // Salvar dados adicionais do usuário no Firestore
+        // Usamos setDoc para criar o documento com o UID do usuário
+        await setDoc(doc(db, "users", user.uid), {
+            email: user.email,
+            username: username, // O username inicial
+            profileCompleted: false, // Marcamos como falso para ir para CreateProfileScreen
+            createdAt: serverTimestamp(), // Usa o timestamp do servidor
+        });
+
+        // Retorna um objeto de usuário que seu AuthContext espera
+        return {
+            uid: user.uid,
+            email: user.email,
+            username: username,
+            profileCompleted: false,
+            // Não precisamos gerenciar idToken e refreshToken aqui, o SDK faz isso
+        };
+    } catch (error) {
+        console.error("Firebase signup error:", error);
+        throw error;
+    }
+}
+
+export async function login(email, password) {
+    try {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        // Buscar dados adicionais do usuário no Firestore
+        const userDoc = await getDoc(doc(db, "users", user.uid));
+        if (userDoc.exists()) {
+            const userDataFromFirestore = userDoc.data();
+            return {
+                uid: user.uid,
+                email: user.email,
+                ...userDataFromFirestore, // Inclui username, bio, profileImage, profileCompleted
+            };
+        } else {
+            // Caso o documento do usuário não exista (cenário raro após login)
+            // Retornar dados básicos e profileCompleted como falso para forçar a criação de perfil
+            return {
+                uid: user.uid,
+                email: user.email,
+                profileCompleted: false,
+            };
+        }
+    } catch (error) {
+        console.error("Firebase login error:", error);
+        throw error;
+    }
+}
+
+export async function logout() {
+    try {
+        await signOut(auth);
+        // AsyncStorage será limpo no AuthContext (em um próximo passo)
+        return true;
+    } catch (error) {
+        console.error("Firebase logout error:", error);
+        throw error;
+    }
+}
+
+// --- Funções de Perfil ---
+
+export async function updateUserProfile(uid, profileData) {
+    try {
+        // Atualizar documento do usuário no Firestore
+        const userRef = doc(db, "users", uid);
+        await updateDoc(userRef, {
+            ...profileData, // username, bio, profileImage, profileCompleted
+            updatedAt: serverTimestamp(),
+        });
+
+        // Se você quiser atualizar o display name/photo URL diretamente no Firebase Auth
+        // (Isso é opcional, mas útil para o console do Firebase Auth)
+        if (auth.currentUser && auth.currentUser.uid === uid) {
+            const updateAuthProfile = {};
+            if (profileData.username) updateAuthProfile.displayName = profileData.username;
+            if (profileData.profileImage) updateAuthProfile.photoURL = profileData.profileImage;
+            if (Object.keys(updateAuthProfile).length > 0) {
+                await updateProfile(auth.currentUser, updateAuthProfile);
+            }
+        }
+
+        // Retorna os dados atualizados
+        return { uid, ...profileData };
+
+    } catch (error) {
+        console.error("Firebase updateUserProfile error:", error);
+        throw error;
+    }
+}
+
+export async function getUserProfile(uid) {
+    try {
+        const userDoc = await getDoc(doc(db, "users", uid));
+        if (userDoc.exists()) {
+            return { uid, ...userDoc.data() };
+        }
+        return null; // Usuário não encontrado no Firestore
+    } catch (error) {
+        console.error("Firebase getUserProfile error:", error);
+        throw error;
+    }
+}
+
+// --- Funções de Postagens (Exemplos, você pode expandir) ---
+
+export async function createPost(postData) {
+    try {
+        const docRef = await addDoc(collection(db, "posts"), {
+            ...postData,
+            createdAt: serverTimestamp(),
+        });
+        return { id: docRef.id, ...postData };
+    } catch (error) {
+        console.error("Firebase createPost error:", error);
+        throw error;
+    }
+}
+
+export async function getPosts(isStories = false) {
+    try {
+        const postsCollectionRef = collection(db, "posts");
+        let q;
+        if (isStories) {
+            q = query(postsCollectionRef, where("isStory", "==", true), orderBy("createdAt", "desc"), limit(20));
+        } else {
+            q = query(postsCollectionRef, where("isStory", "==", false), orderBy("createdAt", "desc"), limit(20));
+        }
+
+        const querySnapshot = await getDocs(q);
+        const posts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return posts;
+    } catch (error) {
+        console.error("Firebase getPosts error:", error);
+        throw error;
+    }
+}
+
+// --- Funções de Busca (Exemplo) ---
+
+export async function searchUsers(queryText) {
+    try {
+        const usersCollectionRef = collection(db, "users");
+        // Nota: Queries LIKE não são suportadas diretamente no Firestore.
+        // Para "GREATER_THAN_OR_EQUAL", o Firestore exige um índice para 'username'
+        // e talvez precise de um `endAt` para um range mais preciso para simular 'startsWith'.
+        // Para busca de "username" simples que começa com a query:
+        const q = query(
+            usersCollectionRef,
+            where("username", ">=", queryText),
+            where("username", "<=", queryText + '\uf8ff'), // \uf8ff é um caractere unicode que permite prefix matching
+            limit(10)
+        );
+
+        const querySnapshot = await getDocs(q);
+        const users = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return users;
+    } catch (error) {
+        console.error("Firebase searchUsers error:", error);
+        throw error;
+    }
+}
+
+// Exporta instâncias para uso direto se necessário
+export { auth, db, storage, onAuthStateChanged };
