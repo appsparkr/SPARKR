@@ -8,7 +8,8 @@ const CLOUDINARY_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}
 const CLOUDINARY_UPLOAD_PRESET = "sparkr_unsigned";
 
 // Função principal para upload de mídia (imagem ou vídeo)
-export const uploadImage = async (mediaUri, mediaType = 'image') => {
+// Adicionado um parâmetro 'onProgress' para callbacks de progresso
+export const uploadImage = async (mediaUri, mediaType = 'image', onProgress = () => {}) => {
   if (!mediaUri) {
     console.log('uploadImage - Nenhuma mídia fornecida');
     return null;
@@ -57,6 +58,11 @@ export const uploadImage = async (mediaUri, mediaType = 'image') => {
       headers: {
         // É crucial definir 'Content-Type' como 'multipart/form-data' para uploads de arquivos
         "Content-Type": "multipart/form-data",
+      },
+      // ADICIONADO: Callback para acompanhar o progresso do upload
+      onUploadProgress: (progressEvent) => {
+        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        onProgress(percentCompleted); // Chama a função de callback com o progresso
       },
     });
 

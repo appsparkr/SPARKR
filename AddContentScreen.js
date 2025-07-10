@@ -1,27 +1,29 @@
-import React, { useState, useRef } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Video } from 'expo-av';
+import Constants from 'expo-constants';
+import * as ImagePicker from 'expo-image-picker';
+import { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Platform,
+  SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
-  View,
-  TouchableOpacity,
-  Image,
   TextInput,
-  ScrollView,
-  Alert,
-  ActivityIndicator,
-  Platform
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { Video } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from './AuthContext';
-import Colors from './constants/Colors';
 import { uploadImage } from './cloudinaryConfig';
+import Colors from './constants/Colors';
 
 const AddContentScreen = () => {
   const { createPost, currentUser } = useAuth();
   const [media, setMedia] = useState(null);
-  const [mediaType, setMediaType] = useState(null); // 'image' ou 'video'
+  const [mediaType, setMediaType] = useState(null);
   const [caption, setCaption] = useState('');
   const [isStory, setIsStory] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -44,7 +46,7 @@ const AddContentScreen = () => {
       options.mediaTypes = ImagePicker.MediaTypeOptions.Images;
     } else if (type === 'video') {
       options.mediaTypes = ImagePicker.MediaTypeOptions.Videos;
-      options.videoMaxDuration = 60; // Limite de 60 segundos para vídeos
+      options.videoMaxDuration = 60;
     } else {
       options.mediaTypes = ImagePicker.MediaTypeOptions.All;
     }
@@ -55,7 +57,6 @@ const AddContentScreen = () => {
       const selectedAsset = result.assets[0];
       setMedia(selectedAsset.uri);
       
-      // Determinar o tipo de mídia
       if (selectedAsset.type === 'video') {
         setMediaType('video');
       } else {
@@ -80,7 +81,7 @@ const AddContentScreen = () => {
       options.mediaTypes = ImagePicker.MediaTypeOptions.Images;
     } else if (type === 'video') {
       options.mediaTypes = ImagePicker.MediaTypeOptions.Videos;
-      options.videoMaxDuration = 60; // Limite de 60 segundos para vídeos
+      options.videoMaxDuration = 60;
     } else {
       options.mediaTypes = ImagePicker.MediaTypeOptions.All;
     }
@@ -91,7 +92,6 @@ const AddContentScreen = () => {
       const selectedAsset = result.assets[0];
       setMedia(selectedAsset.uri);
       
-      // Determinar o tipo de mídia
       if (selectedAsset.type === 'video') {
         setMediaType('video');
       } else {
@@ -110,24 +110,10 @@ const AddContentScreen = () => {
     setUploadProgress(0);
 
     try {
-      // Simular progresso de upload
-      const progressInterval = setInterval(() => {
-        setUploadProgress(prev => {
-          if (prev >= 95) {
-            clearInterval(progressInterval);
-            return prev;
-          }
-          return prev + 5;
-        });
-      }, 300);
-
-      // Upload da mídia para o Cloudinary
-      const mediaUrl = await uploadImage(media);
+      const mediaUrl = await uploadImage(media, mediaType, (progress) => {
+        setUploadProgress(progress);
+      });
       
-      clearInterval(progressInterval);
-      setUploadProgress(100);
-
-      // Criar post no Firebase
       await createPost({
         mediaUrl,
         mediaType,
@@ -135,7 +121,6 @@ const AddContentScreen = () => {
         isStory
       });
 
-      // Limpar formulário
       setMedia(null);
       setMediaType(null);
       setCaption('');
@@ -155,14 +140,19 @@ const AddContentScreen = () => {
   };
 
   const renderMediaPreview = () => {
-    if (!media) return null;
+    if (!media) return null; // Se não há mídia, não renderiza nada
+
+    // Garante que o URI é uma string válida antes de passar para source
+    const mediaUri = typeof media === 'string' ? media : (media?.uri || null);
+
+    if (!mediaUri) return null; // Se o URI ainda for inválido, não renderiza
 
     if (mediaType === 'video') {
       return (
         <View style={styles.mediaPreview}>
           <Video
             ref={videoRef}
-            source={{ uri: media }}
+            source={{ uri: mediaUri }} // Usa mediaUri validado
             style={styles.videoPreview}
             useNativeControls
             resizeMode="contain"
@@ -186,126 +176,133 @@ const AddContentScreen = () => {
       );
     } else {
       return (
-        <Image source={{ uri: media }} style={styles.imagePreview} />
+        <Image source={{ uri: mediaUri }} style={styles.imagePreview} /> // Usa mediaUri validado
       );
     }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={[styles.typeButton, !isStory && styles.activeTypeButton]}
-          onPress={() => setIsStory(false)}
-        >
-          <Text style={[styles.typeButtonText, !isStory && styles.activeTypeButtonText]}>Post</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.typeButton, isStory && styles.activeTypeButton]}
-          onPress={() => setIsStory(true)}
-        >
-          <Text style={[styles.typeButtonText, isStory && styles.activeTypeButtonText]}>Story</Text>
-        </TouchableOpacity>
-      </View>
-
-      {media ? (
-        <View style={styles.mediaContainer}>
-          {renderMediaPreview()}
-          <TouchableOpacity style={styles.changeMediaButton} onPress={() => pickMedia()}>
-            <Text style={styles.changeMediaButtonText}>Alterar mídia</Text>
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <ScrollView style={styles.scrollViewContent}>
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={[styles.typeButton, !isStory && styles.activeTypeButton]}
+            onPress={() => setIsStory(false)}
+          >
+            <Text style={[styles.typeButtonText, !isStory && styles.activeTypeButtonText]}>Post</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.typeButton, isStory && styles.activeTypeButton]}
+            onPress={() => setIsStory(true)}
+          >
+            <Text style={[styles.typeButtonText, isStory && styles.activeTypeButtonText]}>Story</Text>
           </TouchableOpacity>
         </View>
-      ) : (
-        <View style={styles.mediaPickerContainer}>
-          <View style={styles.mediaTypeSelector}>
-            <TouchableOpacity 
-              style={styles.mediaTypeButton} 
-              onPress={() => pickMedia('image')}
-            >
-              <Ionicons name="image-outline" size={32} color={Colors.primary} />
-              <Text style={styles.mediaTypeText}>Foto da Galeria</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.mediaTypeButton} 
-              onPress={() => pickMedia('video')}
-            >
-              <Ionicons name="videocam-outline" size={32} color={Colors.primary} />
-              <Text style={styles.mediaTypeText}>Vídeo da Galeria</Text>
+
+        {media ? (
+          <View style={styles.mediaContainer}>
+            {renderMediaPreview()}
+            <TouchableOpacity style={styles.changeMediaButton} onPress={() => pickMedia()}>
+              <Text style={styles.changeMediaButtonText}>Alterar mídia</Text>
             </TouchableOpacity>
           </View>
-          
-          <View style={styles.mediaTypeSelector}>
-            <TouchableOpacity 
-              style={styles.mediaTypeButton} 
-              onPress={() => captureMedia('image')}
-            >
-              <Ionicons name="camera-outline" size={32} color={Colors.primary} />
-              <Text style={styles.mediaTypeText}>Tirar Foto</Text>
-            </TouchableOpacity>
+        ) : (
+          <View style={styles.mediaPickerContainer}>
+            <View style={styles.mediaTypeSelector}>
+              <TouchableOpacity 
+                style={styles.mediaTypeButton} 
+                onPress={() => pickMedia('image')}
+              >
+                <Ionicons name="image-outline" size={32} color={Colors.primary} />
+                <Text style={styles.mediaTypeText}>Foto da Galeria</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.mediaTypeButton} 
+                onPress={() => pickMedia('video')}
+              >
+                <Ionicons name="videocam-outline" size={32} color={Colors.primary} />
+                <Text style={styles.mediaTypeText}>Vídeo da Galeria</Text>
+              </TouchableOpacity>
+            </View>
             
-            <TouchableOpacity 
-              style={styles.mediaTypeButton} 
-              onPress={() => captureMedia('video')}
-            >
-              <Ionicons name="recording-outline" size={32} color={Colors.primary} />
-              <Text style={styles.mediaTypeText}>Gravar Vídeo</Text>
-            </TouchableOpacity>
+            <View style={styles.mediaTypeSelector}>
+              <TouchableOpacity 
+                style={styles.mediaTypeButton} 
+                onPress={() => captureMedia('image')}
+              >
+                <Ionicons name="camera-outline" size={32} color={Colors.primary} />
+                <Text style={styles.mediaTypeText}>Tirar Foto</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.mediaTypeButton} 
+                onPress={() => captureMedia('video')}
+              >
+                <Ionicons name="recording-outline" size={32} color={Colors.primary} />
+                <Text style={styles.mediaTypeText}>Gravar Vídeo</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      )}
+        )}
 
-      {!isStory && (
-        <View style={styles.captionContainer}>
-          <TextInput
-            style={styles.captionInput}
-            placeholder="Escreva uma legenda..."
-            placeholderTextColor={Colors.textSecondary}
-            value={caption}
-            onChangeText={setCaption}
-            multiline
-            maxLength={2200}
-          />
-        </View>
-      )}
-
-      {uploading && (
-        <View style={styles.progressContainer}>
-          <View style={styles.progressBarBackground}>
-            <View 
-              style={[
-                styles.progressBarFill, 
-                { width: `${uploadProgress}%` }
-              ]} 
+        {!isStory && (
+          <View style={styles.captionContainer}>
+            <TextInput
+              style={styles.captionInput}
+              placeholder="Escreva uma legenda..."
+              placeholderTextColor={Colors.textSecondary}
+              value={caption}
+              onChangeText={setCaption}
+              multiline
+              maxLength={2200}
             />
           </View>
-          <Text style={styles.progressText}>{uploadProgress}%</Text>
-        </View>
-      )}
-
-      <TouchableOpacity
-        style={[
-          styles.postButton,
-          { opacity: uploading || !media ? 0.7 : 1 }
-        ]}
-        onPress={uploading ? null : handlePost}
-        disabled={uploading || !media}
-      >
-        {uploading ? (
-          <ActivityIndicator color="#000" />
-        ) : (
-          <Text style={styles.postButtonText}>
-            {isStory ? 'Publicar Story' : 'Publicar'}
-          </Text>
         )}
-      </TouchableOpacity>
-    </ScrollView>
+
+        {uploading && (
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBarBackground}>
+              <View 
+                style={[
+                  styles.progressBarFill, 
+                  { width: `${uploadProgress}%` }
+                ]} 
+              />
+            </View>
+            <Text style={styles.progressText}>{uploadProgress}%</Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[
+            styles.postButton,
+            { opacity: uploading || !media ? 0.7 : 1 }
+          ]}
+          onPress={uploading ? null : handlePost}
+          disabled={uploading || !media}
+        >
+          {uploading ? (
+            <ActivityIndicator color="#000" />
+          ) : (
+            <Text style={styles.postButtonText}>
+              {isStory ? 'Publicar Story' : 'Publicar'}
+            </Text>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  safeAreaContainer: {
     flex: 1,
+    backgroundColor: Colors.background,
+    paddingTop: Platform.OS === 'android' ? Constants.statusBarHeight : 0,
+  },
+  scrollViewContent: {
+    flexGrow: 1, // Use flexGrow para garantir que o conteúdo preencha o espaço e permita rolagem
     backgroundColor: Colors.background,
   },
   header: {

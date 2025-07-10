@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "278148826560",
+    "project_id": "sparkr-app",
+    "storage_bucket": "sparkr-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278148826560:android:78690915d986d6c39cf425",
+        "android_client_info": {
+          "package_name": "com.sparkr.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC5zXmWNejDx1Oaoe_M0pw1JEPw2OrC8WE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

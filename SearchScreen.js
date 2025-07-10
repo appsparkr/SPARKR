@@ -1,182 +1,289 @@
-import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, FlatList, Image, TouchableOpacity, ActivityIndicator } from 'react-native';
+// SearchScreen.js
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import Constants from 'expo-constants';
+import { useCallback, useState } from 'react'; // Adicionado useEffect
+import { ActivityIndicator, Alert, FlatList, Image, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from './AuthContext';
 import Colors from './constants/Colors';
 
 const SearchScreen = () => {
-  const { searchUsers } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [searched, setSearched] = useState(false);
+    const [searchText, setSearchText] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const navigation = useNavigation();
+    const { searchUsers, followUser, unfollowUser, checkIfFollowing, currentUser } = useAuth();
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) return;
-    
-    setLoading(true);
-    try {
-      const results = await searchUsers(searchQuery);
-      setSearchResults(results);
-      setSearched(true);
-    } catch (error) {
-      console.error('SearchScreen - Erro na busca:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+    // Este useEffect é para depuração, para ver quando userFollowing muda
+    // Descomente se precisar de mais logs sobre o estado de seguir global
+    /*
+    useEffect(() => {
+        if (currentUser) {
+            console.log("SearchScreen: userFollowing state in AuthContext updated. Re-evaluating search results' follow status.");
+            // Re-avalia o status de seguir para os resultados atuais
+            setSearchResults(prevResults =>
+                prevResults.map(user => ({
+                    ...user,
+                    isFollowing: checkIfFollowing(user.uid)
+                }))
+            );
+        }
+    }, [checkIfFollowing, currentUser]); // Depende de checkIfFollowing e currentUser
+    */
 
-  const renderUserItem = ({ item }) => (
-    <TouchableOpacity style={styles.userItem}>
-      <Image 
-        source={{ uri: item.profileImage || 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg' }} 
-        style={styles.userImage} 
-      />
-      <View style={styles.userInfo}>
-        <Text style={styles.username}>{item.username}</Text>
-        <Text style={styles.userBio} numberOfLines={1}>{item.bio}</Text>
-      </View>
-      <TouchableOpacity style={styles.followButton}>
-        <Text style={styles.followButtonText}>Seguir</Text>
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
+    const handleSearch = useCallback(async () => {
+        if (searchText.trim() === '') {
+            setSearchResults([]);
+            return;
+        }
+        setLoading(true);
+        try {
+            const results = await searchUsers(searchText); // searchUsers já retorna com isFollowing
+            setSearchResults(results);
+            console.log("SearchScreen: Search results updated with follow status.");
+        } catch (error) {
+            console.error('SearchScreen: Erro ao buscar usuários:', error);
+            Alert.alert('Erro', 'Não foi possível buscar usuários. Tente novamente.');
+        } finally {
+            setLoading(false);
+        }
+    }, [searchText, searchUsers]);
 
-  const renderEmptyComponent = () => (
-    <View style={styles.emptyContainer}>
-      {searched ? (
-        <>
-          <Ionicons name="search" size={48} color={Colors.textSecondary} />
-          <Text style={styles.emptyText}>
-            Nenhum resultado encontrado para "{searchQuery}"
-          </Text>
-        </>
-      ) : (
-        <>
-          <Ionicons name="search" size={48} color={Colors.textSecondary} />
-          <Text style={styles.emptyText}>
-            Busque por usuários para seguir
-          </Text>
-        </>
-      )}
-    </View>
-  );
+    const handleToggleFollow = useCallback(async (userId) => {
+        if (!currentUser) {
+            Alert.alert('Erro', 'Você precisa estar logado para seguir/deixar de seguir.');
+            return;
+        }
+        
+        // Obtenha o status MAIS ATUALIZADO diretamente do AuthContext
+        const isCurrentlyFollowing = checkIfFollowing(userId);
+        console.log(`SearchScreen: handleToggleFollow - userId: ${userId}`);
+        console.log(`SearchScreen: handleToggleFollow - isCurrentlyFollowing (from checkIfFollowing): ${isCurrentlyFollowing}`);
+        
+        try {
+            let newFollowStatus;
+            if (isCurrentlyFollowing) {
+                console.log(`SearchScreen: Chamando unfollowUser para ${userId}`);
+                await unfollowUser(userId);
+                newFollowStatus = false;
+            } else {
+                console.log(`SearchScreen: Chamando followUser para ${userId}`);
+                await followUser(userId);
+                newFollowStatus = true;
+            }
 
-  return (
-    <View style={styles.container}>
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={Colors.textSecondary} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar"
-          placeholderTextColor={Colors.textSecondary}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          onSubmitEditing={handleSearch}
-          returnKeyType="search"
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-            <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
-          </TouchableOpacity>
-        )}
-      </View>
-      
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+            // Atualiza os resultados da busca para refletir o novo status de seguir imediatamente
+            setSearchResults(prevResults =>
+                prevResults.map(user =>
+                    user.uid === userId ? { ...user, isFollowing: newFollowStatus } : user
+                )
+            );
+            console.log(`SearchScreen: UI atualizada para ${userId}. Novo status: ${newFollowStatus ? 'Seguindo' : 'Não Seguindo'}`);
+
+        } catch (error) {
+            console.error('SearchScreen: Erro ao alternar seguir:', error);
+            Alert.alert('Erro', 'Não foi possível completar a ação. Tente novamente.');
+        }
+    }, [currentUser, followUser, unfollowUser, checkIfFollowing]);
+
+
+    const renderUserItem = ({ item }) => {
+        const userProfileImageUri = item.userProfileImage && item.userProfileImage.trim() !== ''
+            ? item.userProfileImage
+            : 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg';
+
+        const isCurrentUserProfile = currentUser && currentUser.uid === item.uid;
+
+        // Garante que item.isFollowing é um booleano
+        const displayIsFollowing = !!item.isFollowing; 
+
+        return (
+            <TouchableOpacity
+                style={styles.userItem}
+                onPress={() => {
+                    navigation.navigate('ProfileDetail', { userId: item.uid });
+                }}
+            >
+                <Image
+                    source={{ uri: userProfileImageUri }}
+                    style={styles.userImage}
+                />
+                <View style={styles.userInfo}>
+                    <Text style={styles.username}>{item.username}</Text>
+                    {item.bio && <Text style={styles.bio} numberOfLines={1}>{item.bio}</Text>}
+                </View>
+                {!isCurrentUserProfile && (
+                    <TouchableOpacity
+                        style={[
+                            styles.followButton,
+                            displayIsFollowing ? styles.followingButton : styles.notFollowingButton,
+                        ]}
+                        onPress={() => handleToggleFollow(item.uid)}
+                    >
+                        <Text style={displayIsFollowing ? styles.followingButtonText : styles.notFollowingButtonText}>
+                            {displayIsFollowing ? 'Seguindo' : 'Seguir'}
+                        </Text>
+                    </TouchableOpacity>
+                )}
+            </TouchableOpacity>
+        );
+    };
+
+    const renderEmptyComponent = () => (
+        <View style={styles.emptyContainer}>
+            <Ionicons name="people-outline" size={48} color={Colors.textSecondary} />
+            <Text style={styles.emptyText}>
+                Nenhum usuário encontrado.
+            </Text>
+            <Text style={styles.emptySubText}>
+                Tente pesquisar por um nome diferente.
+            </Text>
         </View>
-      ) : (
-        <FlatList
-          data={searchResults}
-          renderItem={renderUserItem}
-          keyExtractor={(item) => item.uid}
-          ListEmptyComponent={renderEmptyComponent}
-          contentContainerStyle={searchResults.length === 0 ? { flex: 1 } : null}
-        />
-      )}
-    </View>
-  );
+    );
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <View style={styles.searchBar}>
+                <Ionicons name="search" size={20} color={Colors.textSecondary} style={styles.searchIcon} />
+                <TextInput
+                    style={styles.searchInput}
+                    placeholder="Buscar usuários..."
+                    placeholderTextColor={Colors.textSecondary}
+                    value={searchText}
+                    onChangeText={setSearchText}
+                    onSubmitEditing={handleSearch}
+                    returnKeyType="search"
+                />
+                {searchText.length > 0 && (
+                    <TouchableOpacity onPress={() => setSearchText('')} style={styles.clearButton}>
+                        <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
+                    </TouchableOpacity>
+                )}
+            </View>
+
+            {loading ? (
+                <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="large" color={Colors.primary} />
+                    <Text style={styles.loadingText}>Buscando usuários...</Text>
+                </View>
+            ) : (
+                <FlatList
+                    data={searchResults}
+                    renderItem={renderUserItem}
+                    keyExtractor={(item) => item.uid}
+                    showsVerticalScrollIndicator={false}
+                    ListEmptyComponent={searchText.length > 0 ? renderEmptyComponent : null}
+                    contentContainerStyle={searchResults.length === 0 && searchText.length > 0 ? styles.emptyListContainer : null}
+                />
+            )}
+        </SafeAreaView>
+    );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.inputBackground,
-    borderRadius: 10,
-    margin: 10,
-    paddingHorizontal: 10,
-  },
-  searchIcon: {
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    height: 40,
-    color: Colors.text,
-  },
-  clearButton: {
-    padding: 5,
-  },
-  userItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  userImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
-  userInfo: {
-    flex: 1,
-    marginLeft: 15,
-  },
-  username: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: Colors.text,
-  },
-  userBio: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
-  followButton: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 5,
-  },
-  followButtonText: {
-    color: '#000',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    marginTop: 10,
-    color: Colors.textSecondary,
-    fontSize: 16,
-    textAlign: 'center',
-  },
+    container: {
+        flex: 1,
+        backgroundColor: Colors.background,
+        paddingTop: Constants.statusBarHeight,
+    },
+    searchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: Colors.card,
+        borderRadius: 10,
+        marginHorizontal: 15,
+        marginVertical: 10,
+        paddingHorizontal: 10,
+    },
+    searchIcon: {
+        marginRight: 10,
+    },
+    searchInput: {
+        flex: 1,
+        color: Colors.text,
+        fontSize: 16,
+        paddingVertical: 8,
+    },
+    clearButton: {
+        marginLeft: 10,
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        color: Colors.text,
+    },
+    userItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+        paddingHorizontal: 15,
+        borderBottomWidth: 0.5,
+        borderBottomColor: Colors.border,
+    },
+    userImage: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        marginRight: 15,
+    },
+    userInfo: {
+        flex: 1,
+    },
+    username: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: Colors.text,
+    },
+    bio: {
+        fontSize: 14,
+        color: Colors.textSecondary,
+    },
+    followButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 15,
+        borderRadius: 20,
+    },
+    followingButton: {
+        backgroundColor: Colors.card,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    notFollowingButton: {
+        backgroundColor: Colors.primary,
+    },
+    followingButtonText: {
+        color: Colors.text,
+        fontWeight: 'bold',
+    },
+    notFollowingButtonText: {
+        color: Colors.background,
+        fontWeight: 'bold',
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+        marginTop: 50,
+    },
+    emptyText: {
+        color: Colors.textSecondary,
+        fontSize: 16,
+        marginTop: 10,
+    },
+    emptySubText: {
+        color: Colors.textSecondary,
+        fontSize: 14,
+        marginTop: 5,
+    },
+    emptyListContainer: {
+        flexGrow: 1,
+        justifyContent: 'center',
+    },
 });
 
 export default SearchScreen;

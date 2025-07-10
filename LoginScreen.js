@@ -1,201 +1,218 @@
-import { useNavigation } from '@react-navigation/native';
-import { useState } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+// LoginScreen.js
+import { CommonActions, useNavigation } from '@react-navigation/native'; // Importado CommonActions
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from './AuthContext';
 import Colors from './constants/Colors';
 
-export default function LoginScreen() { // <-- VERIFIQUE SE ESTA LINHA ESTÁ EXATAMENTE ASSIM
+const LoginScreen = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const { login } = useAuth();
   const navigation = useNavigation();
 
-  const handleLogin = async () => {
-    setLoading(true);
-    setError('');
+  const handleLogin = useCallback(async () => {
+    if (!email || !password) {
+      Alert.alert('Erro de Login', 'Por favor, preencha todos os campos.');
+      return;
+    }
 
+    setLoading(true);
     try {
       await login(email, password);
-    } catch (err) {
-      setError(err.message);
+      console.log('LoginScreen: Login bem-sucedido. Redirecionando...');
+
+      // Redefine a pilha de navegação para a rota principal do aplicativo (MainTabs)
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'MainTabs' }], // 'MainTabs' deve ser o nome da sua rota principal no RootStack
+        })
+      );
+
+    } catch (error) {
+      console.error('LoginScreen: Erro no login:', error);
+      Alert.alert('Erro no Login', error.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [email, password, login, navigation]); // Adicionado 'navigation' como dependência
 
-  const handleBack = () => {
-    console.log('Navigating to Welcome');
-    navigation.navigate('Welcome');
-  };
+  const handleForgotPassword = useCallback(() => {
+    navigation.navigate('ForgotPassword'); // Navega para a tela de redefinição de senha
+  }, [navigation]);
 
-  const handleSignup = () => {
-    console.log('Navigating to Signup');
-    navigation.navigate('Signup');
-  };
-
-  const isButtonDisabled = !email || !password || loading;
+  const handleSignUp = useCallback(() => {
+    navigation.navigate('Signup'); // Navega para a tela de cadastro
+  }, [navigation]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-        <Text style={styles.backButtonText}>Voltar</Text>
-      </TouchableOpacity>
-      <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-        <Text style={styles.logo}>SPARKR</Text>
-        <Text style={styles.description}>
-          Entre na sua conta para se conectar com a comunidade SPARKR
-        </Text>
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor={Colors.textSecondary}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Senha"
-            placeholderTextColor={Colors.textSecondary}
-            secureTextEntry={true}
-            value={password}
-            onChangeText={setPassword}
-          />
-        </View>
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        <TouchableOpacity
-          style={[styles.loginButton, isButtonDisabled && styles.disabledButton]}
-          disabled={isButtonDisabled}
-          onPress={handleLogin}
-        >
-          <Text style={styles.loginButtonText}>
-            {loading ? 'Entrando...' : 'Entrar'}
-          </Text>
-        </TouchableOpacity>
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OU</Text>
-          <View style={styles.dividerLine} />
-        </View>
-        <TouchableOpacity style={styles.signupButton} onPress={handleSignup}>
-          <Text style={styles.signupButtonText}>Não tem uma conta? Criar Conta</Text>
-        </TouchableOpacity>
-      </ScrollView>
+    <SafeAreaView style={styles.safeAreaContainer}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoidingView}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView contentContainerStyle={styles.scrollViewContent}>
+          <View style={styles.container}>
+            <Text style={styles.title}>Bem-vindo de volta!</Text>
+            <Text style={styles.subtitle}>Faça login para continuar</Text>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Email</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Seu email"
+                placeholderTextColor={Colors.textSecondary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={email}
+                onChangeText={setEmail}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.inputLabel}>Senha</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Sua senha"
+                placeholderTextColor={Colors.textSecondary}
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.forgotPasswordButton} onPress={handleForgotPassword}>
+              <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.loginButton, loading && styles.loginButtonDisabled]}
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.loginButtonText}>ENTRAR</Text>
+              )}
+            </TouchableOpacity>
+
+            <View style={styles.signupContainer}>
+              <Text style={styles.signupText}>Não tem uma conta?</Text>
+              <TouchableOpacity onPress={handleSignUp}>
+                <Text style={styles.signupLink}> Cadastre-se</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  safeArea: {
+  safeAreaContainer: {
     flex: 1,
     backgroundColor: Colors.background,
   },
-  container: {
+  keyboardAvoidingView: {
     flex: 1,
   },
-  contentContainer: {
-    alignItems: 'center',
-    padding: 20,
-    paddingTop: 40,
-    paddingBottom: 40,
-    width: '100%',
+  scrollViewContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
-  logo: {
-    fontSize: 42,
+  container: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
     fontWeight: 'bold',
     color: Colors.primary,
-    marginBottom: 20,
+    marginBottom: 10,
   },
-  description: {
+  subtitle: {
     fontSize: 16,
     color: Colors.textSecondary,
-    textAlign: 'center',
-    marginBottom: 30,
-    paddingHorizontal: 20,
+    marginBottom: 40,
   },
-  inputContainer: {
-    width: '90%',
+  inputGroup: {
+    width: '100%',
     marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 14,
+    color: Colors.text,
+    marginBottom: 5,
+    fontWeight: 'bold',
   },
   input: {
     width: '100%',
-    height: 60,
-    backgroundColor: Colors.card,
-    borderRadius: 5,
-    marginBottom: 10,
+    height: 50,
+    backgroundColor: Colors.inputBackground,
+    borderRadius: 10,
     paddingHorizontal: 15,
-    color: Colors.text,
     fontSize: 16,
+    color: Colors.text,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+    marginBottom: 20,
+  },
+  forgotPasswordText: {
+    color: Colors.primary,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   loginButton: {
-    width: '90%',
+    width: '100%',
     height: 50,
     backgroundColor: Colors.primary,
-    borderRadius: 5,
-    alignItems: 'center',
+    borderRadius: 10,
     justifyContent: 'center',
-    marginBottom: 15,
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  disabledButton: {
-    backgroundColor: Colors.border,
+  loginButtonDisabled: {
     opacity: 0.7,
   },
   loginButtonText: {
-    color: Colors.background,
-    fontSize: 16,
+    color: '#000', // Texto preto para contraste com Colors.primary
+    fontSize: 18,
     fontWeight: 'bold',
   },
-  divider: {
+  signupContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    width: '90%',
-    marginBottom: 20,
+    marginTop: 20,
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.border,
-  },
-  dividerText: {
-    color: Colors.textSecondary,
-    paddingHorizontal: 10,
+  signupText: {
+    color: Colors.text,
     fontSize: 14,
   },
-  signupButton: {
-    width: '90%',
-    height: 50,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: Colors.primary,
-    borderRadius: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  signupButtonText: {
+  signupLink: {
     color: Colors.primary,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
-  },
-  backButton: {
-    position: 'absolute',
-    top: 20,
-    left: 20,
-    zIndex: 1,
-  },
-  backButtonText: {
-    fontSize: 30,
-    color: Colors.primary,
-  },
-  errorText: {
-    color: Colors.error,
-    marginBottom: 10,
-    textAlign: 'center',
-    fontSize: 14,
   },
 });
 
+export default LoginScreen;

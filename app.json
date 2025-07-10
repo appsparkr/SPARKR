@@ -3,6 +3,7 @@
     "name": "sparkr-v4",
     "slug": "snack-6af78e68-b5b3-4049-b084-be60065280a9",
     "version": "1.0.0",
+    "sdkVersion":"51.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "jsEngine": "hermes",

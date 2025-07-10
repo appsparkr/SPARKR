@@ -3,12 +3,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from './AuthContext';
-import { uploadImage } from './cloudinaryConfig'; // Certifique-se de que 'cloudinaryConfig' está correto
-import Colors from './constants/Colors'; // Certifique-se de que este arquivo existe e exporta Colors
+import Colors from './constants/Colors';
 
 const CreateProfileScreen = ({ navigation }) => {
-  // Desestruturando currentUser e updateUserProfile de useAuth
-  const { currentUser, updateUserProfile } = useAuth();
+  const { currentUser, updateUserProfile, uploadImageToFirebase } = useAuth();
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [profileImage, setProfileImage] = useState(null); // URI da imagem selecionada (local ou URL)
@@ -16,20 +14,19 @@ const CreateProfileScreen = ({ navigation }) => {
   const [loadingPermissions, setLoadingPermissions] = useState(false); // Indica se está verificando permissões da galeria
 
   console.log('CreateProfileScreen - Rendering...');
-  console.log('CreateProfileScreen - currentUser:', currentUser);
+  console.log('CreateProfileScreen - currentUser:', currentUser ? { uid: currentUser.uid, profileData: currentUser.profileData } : 'null');
 
   // Efeito para pré-popular os campos se o usuário já tiver dados existentes
   useEffect(() => {
-    if (currentUser) {
-      if (currentUser.username) {
-        setUsername(currentUser.username);
+    if (currentUser && currentUser.profileData) { // Verifica se profileData existe
+      if (currentUser.profileData.username) {
+        setUsername(currentUser.profileData.username);
       }
-      if (currentUser.bio) {
-        setBio(currentUser.bio);
+      if (currentUser.profileData.bio) {
+        setBio(currentUser.profileData.bio);
       }
-      // Note: Use userProfileImage conforme definido no AuthContext para consistência
-      if (currentUser.userProfileImage) {
-        setProfileImage(currentUser.userProfileImage);
+      if (currentUser.profileData.userProfileImage) {
+        setProfileImage(currentUser.profileData.userProfileImage);
       }
     }
   }, [currentUser]);
@@ -38,7 +35,6 @@ const CreateProfileScreen = ({ navigation }) => {
   const requestImagePickerPermissions = async () => {
     setLoadingPermissions(true);
     try {
-      // Solicita permissão para acessar a biblioteca de mídia (galeria)
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
         Alert.alert('Permissão negada', 'É necessário permitir o acesso à galeria para escolher uma foto.');
@@ -56,25 +52,22 @@ const CreateProfileScreen = ({ navigation }) => {
 
   // Função para abrir a galeria e permitir a seleção de uma imagem
   const pickImage = async () => {
-    // Verifica se tem permissão antes de continuar
     const hasPermission = await requestImagePickerPermissions();
     if (!hasPermission) {
       return;
     }
 
     try {
-      // Abre a galeria para seleção de imagem
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType.Images, // Correção: Usando o enum MediaType.Images
-        allowsEditing: true, // Permite que o usuário edite/corte a imagem
-        aspect: [1, 1],      // Define um aspecto quadrado para a imagem
-        quality: 0.7,        // Qualidade da imagem (0 a 1)
-        selectionLimit: 1,   // Permite selecionar apenas 1 imagem
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+        selectionLimit: 1,
       });
 
-      // Se a seleção não foi cancelada e há assets (imagens)
       if (!result.canceled && result.assets && result.assets.length > 0) {
-        setProfileImage(result.assets[0].uri); // Armazena a URI local da imagem selecionada
+        setProfileImage(result.assets[0].uri);
         console.log('pickImage - Imagem selecionada:', result.assets[0].uri);
       } else {
         console.log('pickImage - Seleção de imagem cancelada.');
@@ -85,56 +78,71 @@ const CreateProfileScreen = ({ navigation }) => {
     }
   };
 
-  // Função para voltar à tela anterior (por exemplo, tela de registro)
+  // Função para voltar à tela anterior
   const handleGoBack = () => {
+    // Esta tela geralmente é a primeira após o signup se o perfil não estiver completo.
+    // O navigation.reset em handleCreateProfile já lida com a navegação principal.
+    // O goBack aqui seria útil se o usuário pudesse chegar a esta tela de outro fluxo
+    // onde o perfil já estava completo e ele está apenas editando, mas para o fluxo de "criar perfil",
+    // ele pode não ser o mais intuitivo se o signup for o único caminho para cá.
+    // Mantido por consistência, mas considere o fluxo exato do seu app.
     navigation.goBack();
   };
 
   // Função para criar ou atualizar o perfil do usuário
   const handleCreateProfile = async () => {
-    // Validação básica do nome de usuário
     if (!username.trim()) {
       Alert.alert('Erro', 'O nome de usuário é obrigatório.');
       return;
     }
 
-    setUploading(true); // Ativa o estado de upload (mostra ActivityIndicator no botão)
+    if (!currentUser || !currentUser.uid) {
+        Alert.alert('Erro', 'Usuário não autenticado.');
+        return;
+    }
+
+    setUploading(true);
     try {
-      let profileImageUrl = '';
-      // Se uma imagem foi selecionada e não é uma URL já existente (ou seja, é um URI local novo)
+      // INÍCIO DA CORREÇÃO E MELHORIA AQUI
+      // 1. Inicia com a URL da imagem de perfil atual do usuário (se existir)
+      let profileImageUrl = currentUser?.profileData?.userProfileImage || null;
+
+      // 2. Se uma NOVA imagem foi selecionada e é um URI local (não começa com 'http')
       if (profileImage && !profileImage.startsWith('http')) {
         try {
-          console.log('handleCreateProfile - Iniciando upload da imagem para Cloudinary');
-          profileImageUrl = await uploadImage(profileImage, 'image'); // Tenta fazer upload
+          console.log('handleCreateProfile - Iniciando upload da imagem para Firebase Storage');
+          // Chama a função de upload do AuthContext para o URI local
+          profileImageUrl = await uploadImageToFirebase(profileImage, `profile_images/${currentUser.uid}.jpg`);
           console.log('handleCreateProfile - URL da imagem após upload:', profileImageUrl);
         } catch (error) {
-          console.error('handleCreateProfile - Erro ao fazer upload da imagem para Cloudinary:', error);
-          Alert.alert('Aviso', 'Falha ao fazer upload da foto. O perfil será salvo sem imagem.');
-          // Em caso de falha no upload, profileImageUrl permanecerá vazia, ou a URL antiga se já existia.
+          console.error('handleCreateProfile - Erro ao fazer upload da imagem para Firebase Storage:', error);
+          Alert.alert('Aviso', 'Falha ao fazer upload da foto. O perfil será salvo sem imagem (ou com a anterior, se houver).');
+          // Se o upload falhar, profileImageUrl permanece com o valor anterior (ou null se não havia anterior)
         }
-      } else if (profileImage && profileImage.startsWith('http')) {
-        // Se já é uma URL (usuário não mudou a imagem ou é uma imagem pré-existente)
-        profileImageUrl = profileImage;
+      } else if (profileImage === null && currentUser?.profileData?.userProfileImage) {
+        // Se o usuário 'limpou' a imagem (definiu profileImage para null), então também limpa no Firestore
+        // Isso só se aplica se houver uma imagem anterior.
+        profileImageUrl = null;
       }
+      // Se profileImage já é uma URL (e não foi alterada para uma nova local), profileImageUrl já estará correto do passo 1.
+      // FIM DA CORREÇÃO E MELHORIA AQUI
 
-      // Prepara os dados do perfil para enviar para o AuthContext
       const profileData = {
         username: username.trim(),
         bio: bio.trim(),
-        userProfileImage: profileImageUrl, // Salva a URL final da imagem
+        userProfileImage: profileImageUrl, // Salva a URL final da imagem (pode ser null)
         profileCompleted: true, // Marca o perfil como completo
       };
 
-      console.log('handleCreateProfile - Atualizando perfil com:', profileData);
-      // Chama a função updateUserProfile do AuthContext (agora disponível e mockada)
-      await updateUserProfile(profileData);
+      console.log('handleCreateProfile - Atualizando perfil para UID:', currentUser.uid, 'com dados:', profileData);
+      // Chama a função updateUserProfile do AuthContext com o UID do usuário
+      await updateUserProfile(currentUser.uid, profileData);
       console.log('handleCreateProfile - Perfil atualizado com sucesso');
 
       // Redefine a pilha de navegação para ir para a tela principal (tabs)
-      // Isso é importante para que o usuário não possa voltar para as telas de autenticação/criação de perfil
       navigation.reset({
         index: 0,
-        routes: [{ name: 'MainTabs' }], // Assegura que o nome da rota 'MainTabs' está correto no RootNavigator
+        routes: [{ name: 'MainTabs' }],
       });
       console.log('handleCreateProfile - Navegando para MainTabs');
 
@@ -142,7 +150,7 @@ const CreateProfileScreen = ({ navigation }) => {
       console.error('handleCreateProfile - Erro ao criar perfil:', error);
       Alert.alert('Erro', 'Houve um problema ao criar o perfil: ' + error.message);
     } finally {
-      setUploading(false); // Desativa o estado de upload
+      setUploading(false);
     }
   };
 
@@ -155,7 +163,6 @@ const CreateProfileScreen = ({ navigation }) => {
       <TouchableOpacity
         style={[styles.profileImagePicker]}
         onPress={pickImage}
-        // Desabilita o botão se as permissões estiverem sendo carregadas ou se estiver fazendo upload
         disabled={loadingPermissions || uploading}
       >
         {profileImage ? (
@@ -190,8 +197,8 @@ const CreateProfileScreen = ({ navigation }) => {
           value={bio}
           onChangeText={setBio}
           multiline
-          textAlignVertical="top" // Para Android, faz o texto começar no topo
-          numberOfLines={4} // Sugere uma altura de 4 linhas
+          textAlignVertical="top"
+          numberOfLines={4}
         />
       </View>
       <TouchableOpacity
@@ -200,7 +207,6 @@ const CreateProfileScreen = ({ navigation }) => {
           { backgroundColor: Colors.primary, opacity: (uploading || loadingPermissions || !username.trim()) ? 0.7 : 1 }
         ]}
         onPress={uploading || loadingPermissions || !username.trim() ? null : handleCreateProfile}
-        // Desabilita o botão se estiver fazendo upload, carregando permissões ou se o nome de usuário estiver vazio
         disabled={uploading || loadingPermissions || !username.trim()}
       >
         <Text style={styles.createButtonText}>
@@ -244,13 +250,13 @@ const styles = StyleSheet.create({
   profileImage: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover', // Garante que a imagem preencha o espaço
+    resizeMode: 'cover',
   },
   profileImagePlaceholder: {
     justifyContent: 'center',
     alignItems: 'center',
-    width: '100%', // Para preencher o TouchableOpacity
-    height: '100%', // Para preencher o TouchableOpacity
+    width: '100%',
+    height: '100%',
   },
   placeholderText: {
     color: Colors.textSecondary,
