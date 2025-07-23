@@ -9,7 +9,7 @@ import {
     Platform,
     SafeAreaView,
     StyleSheet,
-    Text,
+    Text, // Certifique-se de que este está importado
     TouchableOpacity,
     View,
 } from 'react-native';
@@ -36,12 +36,10 @@ const SettingsScreen = () => {
                         setIsLoggingOut(true);
                         try {
                             await logout();
-                            // Após o logout, redefinir a navegação para a tela de autenticação
-                            // Assumindo que a rota de autenticação principal no seu RootStack é 'Auth'
                             navigation.dispatch(
                                 CommonActions.reset({
                                     index: 0,
-                                    routes: [{ name: 'Auth' }], // 'Auth' deve ser o nome da sua rota de autenticação no RootStack
+                                    routes: [{ name: 'Auth' }],
                                 })
                             );
                             console.log('SettingsScreen: Navegação redefinida para a tela de autenticação.');
@@ -58,15 +56,11 @@ const SettingsScreen = () => {
         );
     }, [logout, navigation]);
 
-    // Função para navegar para Termos de Utilização (navegação aninhada)
     const handleTermsOfUse = useCallback(() => {
-        // Navega para o 'Auth' Stack, e dentro dele, para a tela 'TermsOfUse'
         navigation.navigate('Auth', { screen: 'TermsOfUse' });
     }, [navigation]);
 
-    // Função para navegar para Política de Privacidade (navegação aninhada)
     const handlePrivacyPolicy = useCallback(() => {
-        // Navega para o 'Auth' Stack, e dentro dele, para a tela 'PrivacyPolicy'
         navigation.navigate('Auth', { screen: 'PrivacyPolicy' });
     }, [navigation]);
 
@@ -74,25 +68,38 @@ const SettingsScreen = () => {
         <SafeAreaView style={styles.safeAreaContainer}>
             {/* Cabeçalho da tela de definições */}
             <View style={styles.header}>
+                {/* Seta de voltar à esquerda */}
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color={Colors.text} />
                 </TouchableOpacity>
+                {/* Título centralizado */}
                 <Text style={styles.headerTitle}>Definições</Text>
-                {/* Espaçador para centralizar o título. Não renderiza texto visível. */}
+                {/* Espaçador vazio à direita para centralizar o título */}
                 <View style={styles.placeholder} />
             </View>
 
             <View style={styles.content}>
+                {/* Botão para Conta/Editar Perfil */}
+                        <TouchableOpacity style={styles.settingItem} onPress={() => navigation.navigate('EditProfile')}>
+                            <Text style={styles.settingText}>Conta</Text>
+                            <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+                        </TouchableOpacity>
                 {/* Exemplo de outras opções de configuração */}
-                <TouchableOpacity style={styles.settingItem} onPress={() => Alert.alert('Funcionalidade', 'Gerir notificações')}>
-                    <Text style={styles.settingText}>Notificações</Text>
-                    <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
-                </TouchableOpacity>
+                 {/* Opção de Notificações desativada temporariamente */}
+                        { false && (
+                            <TouchableOpacity style={styles.settingItem} onPress={() => navigation.navigate('NotificationSettings')}>
+                                <Text style={styles.settingText}>Notificações</Text>
+                                <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
 
-                <TouchableOpacity style={styles.settingItem} onPress={() => Alert.alert('Funcionalidade', 'Definições de privacidade')}>
-                    <Text style={styles.settingText}>Privacidade</Text>
-                    <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
-                </TouchableOpacity>
+                        {/* Opção de Privacidade desativada temporariamente */}
+                        { false && (
+                            <TouchableOpacity style={styles.settingItem} onPress={() => navigation.navigate('PrivacySettings')}>
+                                <Text style={styles.settingText}>Privacidade</Text>
+                                <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+                            </TouchableOpacity>
+                        )}
 
                 {/* NOVOS: Links para Termos de Utilização e Política de Privacidade */}
                 <TouchableOpacity style={styles.settingItem} onPress={handleTermsOfUse}>
@@ -105,10 +112,10 @@ const SettingsScreen = () => {
                     <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.settingItem} onPress={() => Alert.alert('Funcionalidade', 'Ajuda e Suporte')}>
-                    <Text style={styles.settingText}>Ajuda e Suporte</Text>
-                    <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
-                </TouchableOpacity>
+                <TouchableOpacity style={styles.settingItem} onPress={() => navigation.navigate('HelpAndSupport')}>
+    <Text style={styles.settingText}>Ajuda e Suporte</Text>
+    <Ionicons name="chevron-forward" size={20} color={Colors.textSecondary} />
+</TouchableOpacity>
 
                 {/* Botão de Sair */}
                 <TouchableOpacity
@@ -152,7 +159,7 @@ const styles = StyleSheet.create({
         color: Colors.text,
     },
     placeholder: {
-        width: 24 + 10,
+        width: 24 + 10, // Largura do ícone de volta + padding para balancear o título
     },
     content: {
         flex: 1,

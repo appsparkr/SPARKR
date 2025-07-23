@@ -1,13 +1,133 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { Video } from 'expo-av';
 import Constants from 'expo-constants';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, Modal, Platform, RefreshControl, SafeAreaView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from './AuthContext';
 import Colors from './constants/Colors';
 
+// #####################################################################
+// ## O COMPONENTE PostItem FOI MOVIDO PARA FORA DO HomeScreen ##
+// ## ISTO É UMA OTIMIZAÇÃO DE PERFORMANCE IMPORTANTE ##
+// #####################################################################
+const PostItem = ({ post, onPostLikesUpdated, onOpenOptions, onShare }) => {
+    const navigation = useNavigation();
+    const { currentUser, toggleLikePost, checkIfPostIsLiked } = useAuth();
+    const videoRef = useRef(null);
+    const [isLiked, setIsLiked] = useState(() => checkIfPostIsLiked(post.id));
+    const [currentLikesCount, setCurrentLikesCount] = useState(post.likes || 0);
+
+    useEffect(() => {
+        setIsLiked(checkIfPostIsLiked(post.id));
+        setCurrentLikesCount(post.likes || 0);
+    }, [post.id, post.likes, checkIfPostIsLiked]);
+
+    const handleLikeToggle = async () => {
+        if (!currentUser) return;
+        const previousIsLiked = isLiked;
+        // Atualização otimista da UI
+        setIsLiked(prev => !prev);
+        setCurrentLikesCount(prev => (previousIsLiked ? prev - 1 : prev + 1));
+        try {
+            await toggleLikePost(post.id, post.likes, previousIsLiked);
+            const finalLikesCount = previousIsLiked ? (post.likes || 0) - 1 : (post.likes || 0) + 1;
+            onPostLikesUpdated(post.id, finalLikesCount);
+        } catch (error) {
+            // Reverte a UI em caso de erro
+            setIsLiked(previousIsLiked);
+            setCurrentLikesCount(post.likes || 0);
+            Alert.alert('Erro', 'Não foi possível atualizar a curtida.');
+        }
+    };
+
+    const formatPostDate = (timestamp) => {
+        if (!timestamp) return '';
+        try {
+            const dateObject = new Date(timestamp);
+            if (isNaN(dateObject.getTime())) return '';
+            return dateObject.toLocaleDateString('pt-PT');
+        } catch (e) { return ''; }
+    };
+
+    return (
+        <View style={styles.postContainer}>
+            <View style={styles.postHeader}>
+                <TouchableOpacity
+                    style={styles.postUser}
+                    onPress={() => navigation.navigate('ProfileDetail', { userId: post.userId })}
+                >
+                    <Image source={{ uri: post.userProfileImage || 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg' }} style={styles.postUserImage} />
+                    <Text style={styles.postUsername}>{post.username || 'Usuário Desconhecido'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => onOpenOptions(post)}>
+                    <Ionicons name="ellipsis-horizontal" size={20} color={Colors.text} />
+                </TouchableOpacity>
+            </View>
+
+            {post.mediaType === 'video' && post.videoUrl ? (
+                <Video
+                    ref={videoRef}
+                    source={{ uri: post.videoUrl }}
+                    style={styles.postImage}
+                    resizeMode="cover"
+                    isLooping
+                    isMuted
+                    shouldPlay
+                />
+            ) : post.mediaType === 'image' && post.imageUrl ? (
+                <Image
+                    source={{ uri: post.imageUrl }}
+                    style={styles.postImage}
+                />
+            ) : (
+                <View style={styles.noMediaPlaceholder}>
+                    <Ionicons name="image-outline" size={80} color={Colors.textSecondary} />
+                    <Text style={styles.noMediaText}>Conteúdo de mídia não disponível</Text>
+                </View>
+            )}
+
+            <View style={styles.postActions}>
+                <View style={styles.postActionsLeft}>
+                    <TouchableOpacity style={styles.actionButton} onPress={handleLikeToggle}>
+                        <Ionicons name={isLiked ? "heart" : "heart-outline"} size={24} color={isLiked ? Colors.like : Colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={styles.actionButton}
+                        onPress={() => navigation.navigate('Comments', { postId: post.id })}
+                    >
+                        <Ionicons name="chatbubble-outline" size={24} color={Colors.text} />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionButton} onPress={() => onShare(post)}>
+                        <Ionicons name="paper-plane-outline" size={24} color={Colors.text} />
+                    </TouchableOpacity>
+                </View>
+                <TouchableOpacity>
+                    <Ionicons name="bookmark-outline" size={24} color={Colors.text} />
+                </TouchableOpacity>
+            </View>
+
+            <View style={styles.postInfo}>
+                <Text style={styles.postLikes}>{`${currentLikesCount} curtidas`}</Text>
+                <View style={styles.postCaption}>
+                    <Text style={styles.postUsername}>{post.username || 'Usuário Desconhecido'}</Text>
+                    {post.caption ? <Text style={styles.captionText}> {post.caption}</Text> : null}
+                </View>
+                {post.comments > 0 && (
+                    <TouchableOpacity onPress={() => navigation.navigate('Comments', { postId: post.id })}>
+                        <Text style={styles.commentsText}>
+                            Ver todos os {post.comments} comentário{post.comments > 1 ? 's' : ''}
+                        </Text>
+                    </TouchableOpacity>
+                )}
+                <Text style={styles.postTime}>{formatPostDate(post.createdAt)}</Text>
+            </View>
+        </View>
+    );
+};
+
 const HomeScreen = () => {
-    const { getPosts, getStories, currentUser, toggleLikePost, submitReport, checkIfPostIsLiked, deletePost } = useAuth();
+    const { getPosts, getStories, submitReport, currentUser, toggleLikePost, checkIfPostIsLiked, deletePost, blockUser } = useAuth();
     const navigation = useNavigation();
     const [posts, setPosts] = useState([]);
     const [stories, setStories] = useState([]);
@@ -53,35 +173,33 @@ const HomeScreen = () => {
     // ATENÇÃO: useFocusEffect alterado para NÃO recarregar todo o conteúdo a cada foco
     useFocusEffect(
         useCallback(() => {
-            console.log('HomeScreen: useFocusEffect - Tela focada.');
-            // Carrega conteúdo apenas na montagem inicial do componente
+            // Esta função só vai correr se o conteúdo ainda não tiver sido carregado
             if (!hasLoadedInitialContent.current) {
-                loadContent();
-                hasLoadedInitialContent.current = true;
+                const loadInitialContent = async () => {
+                    console.log('HomeScreen: Carregando conteúdo inicial...');
+                    setLoading(true); // Mostra o indicador de carregamento
+                    try {
+                        // Busca posts e stories em paralelo para mais rapidez
+                        const [postsData, storiesData] = await Promise.all([
+                            getPosts(),
+                            getStories(),
+                        ]);
+                        setPosts(postsData);
+                        setStories(storiesData);
+                    } catch (error) {
+                        console.error('HomeScreen - Erro ao carregar conteúdo:', error);
+                        Alert.alert('Erro', 'Não foi possível carregar o feed.');
+                    } finally {
+                        setLoading(false); // Esconde o indicador de carregamento
+                        hasLoadedInitialContent.current = true; // Marca como carregado
+                        console.log('HomeScreen: Carregamento inicial finalizado.');
+                    }
+                };
+
+                loadInitialContent();
             }
-            return () => {
-                console.log('HomeScreen: useFocusEffect - Tela desfocada.');
-            };
-        }, [loadContent]) // Depende de loadContent apenas se você for chamá-lo condicionalmente
+        }, []) // A dependência vazia [] garante que esta lógica de verificação só corre uma vez
     );
-
-    // useEffect para carregamento inicial (mantido por segurança, mas useFocusEffect é mais preciso para telas de navegação)
-    useEffect(() => {
-        console.log('HomeScreen: useEffect - Carregamento inicial de conteúdo. hasLoadedInitialContent.current:', hasLoadedInitialContent.current);
-        if (!hasLoadedInitialContent.current) {
-            loadContent();
-            hasLoadedInitialContent.current = true;
-        }
-    }, [loadContent]);
-
-
-    const onRefresh = useCallback(async () => {
-        console.log('HomeScreen: Iniciando onRefresh...');
-        setRefreshing(true);
-        await loadContent(); // onRefresh ainda recarrega tudo para garantir dados frescos
-        setRefreshing(false);
-        console.log('HomeScreen: onRefresh finalizado.');
-    }, [loadContent]);
 
     // NOVA FUNÇÃO: Atualiza os likes de uma postagem específica no estado 'posts'
     const onPostLikesUpdated = useCallback((updatedPostId, newLikesCount) => {
@@ -170,182 +288,24 @@ const HomeScreen = () => {
         }
     }, [reportReason, reportDetails, selectedPostForOptions, submitReport]);
 
-    // O componente PostItem agora recebe a prop 'onPostLikesUpdated'
-    const PostItem = ({ post, onPostLikesUpdated }) => {
-        const { currentUser, toggleLikePost, checkIfPostIsLiked } = useAuth();
+const onRefresh = useCallback(async () => {
+        console.log('HomeScreen: Iniciando onRefresh...');
+        setRefreshing(true);
+        try {
+            // A função onRefresh agora busca apenas os posts para ser mais rápida
+            const postsData = await getPosts();
+            setPosts(postsData);
+        } catch (error) {
+            console.error('HomeScreen - Erro no onRefresh:', error);
+            Alert.alert('Erro', 'Não foi possível atualizar o feed.');
+        } finally {
+            setRefreshing(false);
+            console.log('HomeScreen: onRefresh finalizado.');
+        }
+    }, [getPosts]); // A dependência agora é apenas getPosts
 
-        const [isLiked, setIsLiked] = useState(checkIfPostIsLiked(post.id));
-        const [currentLikesCount, setCurrentLikesCount] = useState(post.likes || 0);
 
-        useEffect(() => {
-            const newIsLikedState = checkIfPostIsLiked(post.id);
-            const newLikesCount = post.likes || 0;
-
-            if (isLiked !== newIsLikedState) {
-                console.log(`PostItem ${post.id}: isLiked mudou de ${isLiked} para ${newIsLikedState} (reconciliação).`);
-                setIsLiked(newIsLikedState);
-            }
-            if (currentLikesCount !== newLikesCount) {
-                console.log(`PostItem ${post.id}: currentLikesCount mudou de ${currentLikesCount} para ${newLikesCount} (reconciliação).`);
-                setCurrentLikesCount(newLikesCount);
-            }
-        }, [post.id, post.likes, checkIfPostIsLiked]);
-
-        const handleLikeToggle = async () => {
-            if (!currentUser) {
-                Alert.alert('Erro', 'Você precisa estar logado para curtir posts.');
-                return;
-            }
-
-            const postId = post.id;
-            const previousIsLiked = isLiked;
-            const previousLikesCount = currentLikesCount;
-
-            // 1. Atualização Otimista da UI
-            setIsLiked(prev => !prev);
-            setCurrentLikesCount(prev => (previousIsLiked ? prev - 1 : prev + 1));
-            console.log(`LOG PostItem ${postId}: UI atualizada otimisticamente. isLiked: ${!previousIsLiked}, likes: ${previousIsLiked ? previousLikesCount - 1 : previousLikesCount + 1}`);
-
-            try {
-                // 2. Chama a função do AuthContext para atualizar o Firestore
-                await toggleLikePost(postId, post.likes, previousIsLiked);
-                console.log(`LOG PostItem ${postId}: toggleLikePost concluído (Firestore atualizado).`);
-
-                // 3. Notifica o componente pai (HomeScreen) para atualizar o array 'posts'
-                const finalLikesCount = previousIsLiked ? previousLikesCount - 1 : previousLikesCount + 1;
-                onPostLikesUpdated(postId, finalLikesCount); // <--- CHAMADA CHAVE AQUI
-            } catch (error) {
-                console.error(`LOG PostItem ${postId}: Erro ao alternar curtida do post:`, error);
-                // 4. Reverte a UI se a chamada ao Firestore falhar
-                setIsLiked(previousIsLiked);
-                setCurrentLikesCount(previousLikesCount);
-                Alert.alert('Erro', 'Não foi possível atualizar a curtida. Tente novamente.');
-            }
-        };
-
-        const postUserImageUri = post.userProfileImage && String(post.userProfileImage).trim() !== ''
-            ? String(post.userProfileImage)
-            : 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg';
-
-        const postMediaUri = post.imageUrl && String(post.imageUrl).trim() !== ''
-            ? String(post.imageUrl)
-            : (post.videoUrl && String(post.videoUrl).trim() !== '' ? String(post.videoUrl) : null);
-
-        const formatPostDate = (timestamp) => {
-            let dateObject;
-            if (timestamp && typeof timestamp.toDate === 'function') {
-                dateObject = timestamp.toDate();
-            } else if (timestamp) {
-                try {
-                    if (typeof timestamp === 'object' && timestamp.seconds !== undefined && timestamp.nanoseconds !== undefined) {
-                        dateObject = new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000);
-                    } else {
-                        dateObject = new Date(timestamp);
-                    }
-                } catch (e) {
-                    console.error("HomeScreen: Erro ao criar objeto Date a partir de timestamp:", timestamp, e);
-                    return '';
-                }
-            } else {
-                return '';
-            }
-            if (dateObject instanceof Date && !isNaN(dateObject)) {
-                return dateObject.toLocaleDateString('pt-PT');
-            }
-            return '';
-        };
-
-        console.log('HomeScreen: Renderizando PostItem para post ID:', post.id, ' - isLiked (local):', isLiked, ' - currentLikesCount (local):', currentLikesCount);
-        console.log('HomeScreen: post.likes (prop) para post ID', post.id, ':', post.likes);
-
-        return (
-            <View style={styles.postContainer}>
-                <View style={styles.postHeader}>
-                    <TouchableOpacity
-                        style={styles.postUser}
-                        onPress={() => navigation.navigate('ProfileDetail', { userId: String(post.userId) })}
-                    >
-                        <Image
-                            source={{ uri: postUserImageUri }}
-                            style={styles.postUserImage}
-                        />
-                        <Text style={styles.postUsername}>{String(post.username || 'Usuário Desconhecido')}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => openPostOptionsModal(post)}>
-                        <Ionicons name="ellipsis-horizontal" size={20} color={Colors.text} />
-                    </TouchableOpacity>
-                </View>
-
-                {postMediaUri ? (
-                    <Image
-                        source={{ uri: postMediaUri }}
-                        style={styles.postImage}
-                    />
-                ) : (
-                    <View style={styles.noMediaPlaceholder}>
-                        <Ionicons name="image-outline" size={80} color={Colors.textSecondary} />
-                        <Text style={styles.noMediaText}>Conteúdo de mídia não disponível</Text>
-                    </View>
-                )}
-
-                <View style={styles.postActions}>
-                    <View style={styles.postActionsLeft}>
-                        <TouchableOpacity style={styles.actionButton} onPress={handleLikeToggle}>
-                            <Ionicons
-                                name={isLiked ? "heart" : "heart-outline"}
-                                size={24}
-                                color={isLiked ? Colors.like : Colors.text}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={() => navigation.navigate('Comments', {
-                                postId: String(post.id),
-                                postUsername: String(post.username || 'Usuário Desconhecido'),
-                                postUserImage: String(post.userProfileImage || 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg'),
-                            })}
-                        >
-                            <Ionicons name="chatbubble-outline" size={24} color={Colors.text} />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionButton} onPress={() => handleSharePost(post)}>
-                            <Ionicons name="paper-plane-outline" size={24} color={Colors.text} />
-                        </TouchableOpacity>
-                    </View>
-                    <TouchableOpacity>
-                        <Ionicons name="bookmark-outline" size={24} color={Colors.text} />
-                    </TouchableOpacity>
-                </View>
-
-                <View style={styles.postInfo}>
-                    <Text style={styles.postLikes}>{`${String(currentLikesCount)} curtidas`}</Text>
-                    <View style={styles.postCaption}>
-                        <Text style={styles.postUsername}>{String(post.username || 'Usuário Desconhecido')}</Text>
-                        {String(post.caption || '').trim() !== '' && (
-                            <Text style={styles.captionText}> {String(post.caption).trim()}</Text>
-                        )}
-                    </View>
-                    {Number(post.comments || 0) > 0 && (
-                        <TouchableOpacity
-                            onPress={() => navigation.navigate('Comments', {
-                                postId: String(post.id),
-                                postUsername: String(post.username || 'Usuário Desconhecido'),
-                                postUserImage: String(post.userProfileImage || 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg'),
-                            })}
-                        >
-                            <Text style={styles.commentsText}>
-                                Ver todos os {String(post.comments)} comentário{Number(post.comments || 0) > 1 ? 's' : ''}
-                            </Text>
-                        </TouchableOpacity>
-                    )}
-                    <Text style={styles.postTime}>
-                        {String(formatPostDate(post.createdAt))}
-                    </Text>
-                </View>
-            </View>
-        );
-    };
-
-    const StoryItem = ({ story }) => {
+        const StoryItem = ({ story }) => {
         console.log('HomeScreen: Renderizando StoryItem para story ID:', story.id);
         console.log('HomeScreen: Story data para navegação:', {
             storyId: story.id,
@@ -357,7 +317,7 @@ const HomeScreen = () => {
         return (
             <TouchableOpacity
                 style={styles.storyItem}
-                onPress={() => navigation.navigate('StoryViewer', {
+                onPress={() => navigation.push('StoryViewer', {
                     storyId: story.id,
                     storyMediaUrl: story.mediaUrl,
                     storyMediaType: story.mediaType,
@@ -396,10 +356,12 @@ const HomeScreen = () => {
             <FlatList
                 data={posts}
                 // Passa a nova função onPostLikesUpdated como prop para cada PostItem
-                renderItem={({ item }) => (
+               renderItem={({ item }) => (
                     <PostItem
                         post={item}
                         onPostLikesUpdated={onPostLikesUpdated}
+                        onOpenOptions={openPostOptionsModal}
+                        onShare={handleSharePost}
                     />
                 )}
                 keyExtractor={(item) => item.id}
@@ -447,6 +409,7 @@ const HomeScreen = () => {
                     onPress={() => setShowPostOptionsModal(false)}
                 >
                     <View style={styles.modalContent} onStartShouldSetResponder={() => true}>
+                        {/* Opções que só aparecem se for o dono do post */}
                         {selectedPostForOptions && selectedPostForOptions.userId === currentUser?.uid && (
                             <>
                                 <TouchableOpacity
@@ -466,10 +429,7 @@ const HomeScreen = () => {
                                             'Confirmar Exclusão',
                                             'Tem certeza que deseja apagar esta postagem? Esta ação não pode ser desfeita.',
                                             [
-                                                {
-                                                    text: 'Cancelar',
-                                                    style: 'cancel',
-                                                },
+                                                { text: 'Cancelar', style: 'cancel' },
                                                 {
                                                     text: 'Apagar',
                                                     style: 'destructive',
@@ -477,15 +437,14 @@ const HomeScreen = () => {
                                                         try {
                                                             await deletePost(selectedPostForOptions.id, selectedPostForOptions.userId);
                                                             Alert.alert('Sucesso', 'Postagem apagada com sucesso.');
-                                                            loadContent(); // Recarrega os posts após a exclusão
+                                                            onRefresh();
                                                         } catch (error) {
                                                             console.error('HomeScreen: Erro ao apagar postagem:', error);
-                                                            Alert.alert('Erro', 'Não foi possível apagar a postagem. Tente novamente.');
+                                                            Alert.alert('Erro', 'Não foi possível apagar a postagem.');
                                                         }
                                                     },
                                                 },
-                                            ],
-                                            { cancelable: true }
+                                            ]
                                         );
                                     }}
                                 >
@@ -493,6 +452,40 @@ const HomeScreen = () => {
                                 </TouchableOpacity>
                             </>
                         )}
+
+                        {/* Opção que só aparece se NÃO for o dono do post */}
+                        {selectedPostForOptions && selectedPostForOptions.userId !== currentUser?.uid && (
+                            <TouchableOpacity
+                                style={styles.modalOptionButton}
+                                onPress={() => {
+                                    setShowPostOptionsModal(false);
+                                    Alert.alert(
+                                        'Bloquear Utilizador',
+                                        `Tem a certeza que quer bloquear ${selectedPostForOptions.username}? Você não verá mais o perfil ou conteúdo desta pessoa.`,
+                                        [
+                                            { text: 'Cancelar', style: 'cancel' },
+                                            {
+                                                text: 'Bloquear',
+                                                style: 'destructive',
+                                                onPress: async () => {
+                                                    try {
+                                                        await blockUser(selectedPostForOptions.userId);
+                                                        onRefresh();
+                                                    } catch (error) {
+                                                        console.error("HomeScreen: Erro ao bloquear utilizador", error);
+                                                        Alert.alert("Erro", "Não foi possível bloquear o utilizador.");
+                                                    }
+                                                },
+                                            },
+                                        ]
+                                    );
+                                }}
+                            >
+                                <Text style={[styles.modalOptionTextDanger, { color: '#FF3B30' }]}>Bloquear Utilizador</Text>
+                            </TouchableOpacity>
+                        )}
+                        
+                        {/* Opções que aparecem sempre */}
                         <TouchableOpacity style={styles.modalOptionButton} onPress={() => handleSharePost(selectedPostForOptions)}>
                             <Text style={styles.modalOptionText}>Compartilhar</Text>
                         </TouchableOpacity>

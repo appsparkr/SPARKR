@@ -1,12 +1,14 @@
 // ChatScreen.js
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react'; // Adicionado React e useCallback
 import {
     ActivityIndicator,
-    FlatList,
-    Image // ADICIONADO: Importação do componente Image
+    Alert // Importar Alert para mensagens de erro
     ,
+
+    FlatList,
+    Image,
     KeyboardAvoidingView,
     Platform,
     StyleSheet,
@@ -22,32 +24,41 @@ import Colors from './constants/Colors'; // Ajuste o caminho conforme necessári
 const ChatScreen = () => {
     const route = useRoute();
     const navigation = useNavigation();
-    const { chatId, otherUserId, otherUsername, otherUserProfileImage } = route.params;
+    // 1. Desestruturação de route.params mais segura
+    const { chatId, otherUserId, otherUsername, otherUserProfileImage } = route.params || {};
 
-    const { currentUser, sendMessage, getMessages, getUserProfileById } = useAuth();
+    // Removido getUserProfileById, pois não é usado aqui
+    const { currentUser, sendMessage, getMessages } = useAuth();
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
     const [loadingMessages, setLoadingMessages] = useState(true);
     const [sendingMessage, setSendingMessage] = useState(false);
 
-    // Define o título do cabeçalho da tela
+    // 2. Tratamento robusto para chatId ausente
     useEffect(() => {
+        if (!chatId) {
+            console.error('ChatScreen: chatId é undefined. Não é possível carregar mensagens.');
+            Alert.alert('Erro no Chat', 'Não foi possível iniciar o chat. ID do chat ausente.');
+            navigation.goBack(); // Volta para a tela anterior
+            return;
+        }
+
+        // Define o título do cabeçalho da tela
         navigation.setOptions({
             headerShown: true,
             title: otherUsername || 'Chat',
             headerStyle: { backgroundColor: Colors.background },
             headerTintColor: Colors.text,
             headerBackTitleVisible: false,
+            // Adiciona um botão de voltar personalizado no cabeçalho
+            headerLeft: () => (
+                <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 5 }}>
+                    <Ionicons name="arrow-back" size={24} color={Colors.text} />
+                </TouchableOpacity>
+            ),
         });
-    }, [navigation, otherUsername]);
 
-    // Listener de mensagens em tempo real
-    useEffect(() => {
-        if (!chatId) {
-            setLoadingMessages(false);
-            return;
-        }
-
+        // Listener de mensagens em tempo real
         setLoadingMessages(true);
         const unsubscribe = getMessages(chatId, (fetchedMessages) => {
             setMessages(fetchedMessages);
@@ -55,15 +66,17 @@ const ChatScreen = () => {
         });
 
         return () => unsubscribe();
-    }, [chatId, getMessages]);
+    }, [chatId, navigation, otherUsername, getMessages]); // Adicionado getMessages às dependências
 
-    const handleSendMessage = async () => {
+    const handleSendMessage = useCallback(async () => {
         if (newMessage.trim() === '' || sendingMessage) {
             return;
         }
         setSendingMessage(true);
         try {
-            await sendMessage(chatId, newMessage);
+            // Garante que otherUserId é passado, mesmo que otherParticipant.uid seja undefined no log
+            // A função sendMessage em AuthContext deve usar o otherUserId para determinar o recipiente
+            await sendMessage(chatId, newMessage, otherUserId); // Passa otherUserId para sendMessage
             setNewMessage('');
         } catch (error) {
             console.error('ChatScreen: Erro ao enviar mensagem:', error);
@@ -71,22 +84,43 @@ const ChatScreen = () => {
         } finally {
             setSendingMessage(false);
         }
-    };
+    }, [chatId, newMessage, sendingMessage, sendMessage, otherUserId]); // Adicionado otherUserId às dependências
 
     const renderMessage = ({ item }) => {
-        const isMyMessage = item.senderId === currentUser.uid;
+        const isMyMessage = item.senderId === currentUser?.uid; // Acesso seguro a currentUser.uid
         const messageStyle = isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble;
         const messageTextStyle = isMyMessage ? styles.myMessageText : styles.otherMessageText;
         const containerAlignment = isMyMessage ? styles.myMessageContainer : styles.otherMessageContainer;
 
+        // 4. Defesa na renderização de mensagens
+        const senderProfileImage = String(item.senderProfileImage || 'https://placehold.co/100x100/CCCCCC/000000?text=User');
+        const messageText = String(item.text || '');
+
+        let formattedTime = '';
+        try {
+            if (item.createdAt) {
+                const date = new Date(item.createdAt);
+                if (!isNaN(date.getTime())) {
+                    formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                } else {
+                    console.warn("ChatScreen: Data de createdAt inválida para formatação:", item.createdAt);
+                }
+            }
+        } catch (e) {
+            console.error("ChatScreen: Erro ao formatar messageTime:", e, "Valor:", item.createdAt);
+            formattedTime = '';
+        }
+
         return (
             <View style={containerAlignment}>
-                {!isMyMessage && item.senderProfileImage && (
-                    <Image source={{ uri: item.senderProfileImage }} style={styles.messageAvatar} />
+                {!isMyMessage && (
+                    <Image source={{ uri: senderProfileImage }} style={styles.messageAvatar} />
                 )}
                 <View style={messageStyle}>
-                    <Text style={messageTextStyle}>{item.text}</Text>
-                    <Text style={styles.messageTime}>{new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                    <Text style={messageTextStyle}>{messageText}</Text>
+                    {formattedTime ? (
+                        <Text style={styles.messageTime}>{formattedTime}</Text>
+                    ) : null}
                 </View>
             </View>
         );
@@ -94,10 +128,20 @@ const ChatScreen = () => {
 
     if (loadingMessages) {
         return (
-            <View style={styles.loadingContainer}>
+            <SafeAreaView style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={Colors.primary} />
                 <Text style={styles.loadingText}>Carregando mensagens...</Text>
-            </View>
+            </SafeAreaView>
+        );
+    }
+
+    // Se chatId for nulo, o useEffect já deveria ter navegado de volta.
+    // Este return é um fallback.
+    if (!chatId) {
+        return (
+            <SafeAreaView style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Erro: ID do chat ausente.</Text>
+            </SafeAreaView>
         );
     }
 
@@ -106,14 +150,14 @@ const ChatScreen = () => {
             <KeyboardAvoidingView
                 style={styles.keyboardAvoidingView}
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+                keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0} // Ajuste conforme a altura real do seu cabeçalho
             >
                 <FlatList
                     data={messages}
                     renderItem={renderMessage}
-                    keyExtractor={(item) => item.id}
+                    keyExtractor={(item, index) => item.id ? String(item.id) : index.toString()}
                     contentContainerStyle={styles.messagesListContent}
-                    inverted={false}
+                    inverted={false} // Se quiser as mensagens mais recentes no topo, mude para true e ajuste o layout
                     showsVerticalScrollIndicator={false}
                 />
 
@@ -194,7 +238,7 @@ const styles = StyleSheet.create({
         maxWidth: '80%',
     },
     myMessageText: {
-        color: Colors.black,
+        color: Colors.black, // Depende de Colors.black
         fontSize: 15,
     },
     otherMessageText: {
@@ -225,7 +269,7 @@ const styles = StyleSheet.create({
     },
     messageInput: {
         flex: 1,
-        backgroundColor: Colors.inputBackground,
+        backgroundColor: Colors.inputBackground || Colors.card, // Usar Colors.card como fallback
         borderRadius: 20,
         paddingHorizontal: 15,
         paddingVertical: 10,

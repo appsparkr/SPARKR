@@ -60,7 +60,7 @@ function ProfileStackNavigator() {
         component={SettingsScreen}
         options={{
           title: 'Configurações', // Título para o cabeçalho da SettingsScreen
-          headerShown: true, // Garante que o cabeçalho seja visível para SettingsScreen
+          headerShown: false, // Garante que o cabeçalho seja visível para SettingsScreen
         }}
       />
     </ProfileStack.Navigator>

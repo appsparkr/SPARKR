@@ -21,6 +21,7 @@ export default {
   card: '#121212', // Cinza escuro para cards
   border: '#333333', // Cinza para bordas
   notification: '#FFC107', // Amarelo para notificações
+  notificationBadge: '#FF3B30', // Cor para o badge de notificações
 
   // Cores específicas para funcionalidades
   like: '#FFC107', // Amarelo para curtidas
@@ -30,4 +31,10 @@ export default {
   // Gradientes (para uso com componentes que suportam gradientes)
   gradientStart: '#000000',
   gradientEnd: '#222222',
+
+  // Cores adicionais que você tinha ou podem ser úteis
+  black: '#000000',
+  white: '#FFFFFF',
+  red: '#FF0000', // Adicionei explicitamente para o teste do badge, pode remover depois
+  inputBackground: '#222222',
 };

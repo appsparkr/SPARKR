@@ -261,8 +261,28 @@ const ProfileDetailScreen = () => {
                 <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color={Colors.text} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>{displayUsername}</Text>
-                <TouchableOpacity onPress={() => Alert.alert('Opções', 'Abrir menu de opções do perfil')}>
+                <Text style={styles.headerTitle}>{displayUsername}</Text>               
+                <TouchableOpacity 
+                    onPress={() => {
+                        Alert.alert(
+                            'Opções',
+                            `O que deseja fazer com o perfil de ${displayUsername}?`,
+                            [
+                                {
+                                    text: 'Bloquear Utilizador',
+                                    onPress: () => Alert.alert('Bloquear', 'Lógica de bloqueio a ser implementada aqui.'),
+                                    style: 'destructive',
+                                },
+                                {
+                                    text: 'Cancelar',
+                                    style: 'cancel',
+                                },
+                            ],
+                            { cancelable: true }
+                        );
+                    }} 
+                    style={styles.headerIcon}
+                >
                     <Ionicons name="ellipsis-vertical" size={24} color={Colors.text} />
                 </TouchableOpacity>
             </View>

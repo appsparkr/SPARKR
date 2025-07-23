@@ -2,7 +2,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import Constants from 'expo-constants';
-import { useCallback, useState } from 'react'; // Adicionado useEffect
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Image, SafeAreaView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { useAuth } from './AuthContext';
 import Colors from './constants/Colors';
@@ -14,22 +14,18 @@ const SearchScreen = () => {
     const navigation = useNavigation();
     const { searchUsers, followUser, unfollowUser, checkIfFollowing, currentUser } = useAuth();
 
-    // Este useEffect é para depuração, para ver quando userFollowing muda
-    // Descomente se precisar de mais logs sobre o estado de seguir global
-    /*
+    // Busca automática com debounce
     useEffect(() => {
-        if (currentUser) {
-            console.log("SearchScreen: userFollowing state in AuthContext updated. Re-evaluating search results' follow status.");
-            // Re-avalia o status de seguir para os resultados atuais
-            setSearchResults(prevResults =>
-                prevResults.map(user => ({
-                    ...user,
-                    isFollowing: checkIfFollowing(user.uid)
-                }))
-            );
-        }
-    }, [checkIfFollowing, currentUser]); // Depende de checkIfFollowing e currentUser
-    */
+        const delay = setTimeout(() => {
+            if (searchText.trim()) {
+                handleSearch();
+            } else {
+                setSearchResults([]);
+            }
+        }, 400);
+
+        return () => clearTimeout(delay);
+    }, [searchText]);
 
     const handleSearch = useCallback(async () => {
         if (searchText.trim() === '') {
@@ -38,7 +34,7 @@ const SearchScreen = () => {
         }
         setLoading(true);
         try {
-            const results = await searchUsers(searchText); // searchUsers já retorna com isFollowing
+            const results = await searchUsers(searchText);
             setSearchResults(results);
             console.log("SearchScreen: Search results updated with follow status.");
         } catch (error) {
@@ -54,12 +50,11 @@ const SearchScreen = () => {
             Alert.alert('Erro', 'Você precisa estar logado para seguir/deixar de seguir.');
             return;
         }
-        
-        // Obtenha o status MAIS ATUALIZADO diretamente do AuthContext
+
         const isCurrentlyFollowing = checkIfFollowing(userId);
         console.log(`SearchScreen: handleToggleFollow - userId: ${userId}`);
         console.log(`SearchScreen: handleToggleFollow - isCurrentlyFollowing (from checkIfFollowing): ${isCurrentlyFollowing}`);
-        
+
         try {
             let newFollowStatus;
             if (isCurrentlyFollowing) {
@@ -72,20 +67,17 @@ const SearchScreen = () => {
                 newFollowStatus = true;
             }
 
-            // Atualiza os resultados da busca para refletir o novo status de seguir imediatamente
             setSearchResults(prevResults =>
                 prevResults.map(user =>
                     user.uid === userId ? { ...user, isFollowing: newFollowStatus } : user
                 )
             );
             console.log(`SearchScreen: UI atualizada para ${userId}. Novo status: ${newFollowStatus ? 'Seguindo' : 'Não Seguindo'}`);
-
         } catch (error) {
             console.error('SearchScreen: Erro ao alternar seguir:', error);
             Alert.alert('Erro', 'Não foi possível completar a ação. Tente novamente.');
         }
     }, [currentUser, followUser, unfollowUser, checkIfFollowing]);
-
 
     const renderUserItem = ({ item }) => {
         const userProfileImageUri = item.userProfileImage && item.userProfileImage.trim() !== ''
@@ -93,9 +85,7 @@ const SearchScreen = () => {
             : 'https://res.cloudinary.com/demo/image/upload/v1312461204/sample.jpg';
 
         const isCurrentUserProfile = currentUser && currentUser.uid === item.uid;
-
-        // Garante que item.isFollowing é um booleano
-        const displayIsFollowing = !!item.isFollowing; 
+        const displayIsFollowing = !!item.isFollowing;
 
         return (
             <TouchableOpacity
@@ -104,10 +94,7 @@ const SearchScreen = () => {
                     navigation.navigate('ProfileDetail', { userId: item.uid });
                 }}
             >
-                <Image
-                    source={{ uri: userProfileImageUri }}
-                    style={styles.userImage}
-                />
+                <Image source={{ uri: userProfileImageUri }} style={styles.userImage} />
                 <View style={styles.userInfo}>
                     <Text style={styles.username}>{item.username}</Text>
                     {item.bio && <Text style={styles.bio} numberOfLines={1}>{item.bio}</Text>}
@@ -132,12 +119,8 @@ const SearchScreen = () => {
     const renderEmptyComponent = () => (
         <View style={styles.emptyContainer}>
             <Ionicons name="people-outline" size={48} color={Colors.textSecondary} />
-            <Text style={styles.emptyText}>
-                Nenhum usuário encontrado.
-            </Text>
-            <Text style={styles.emptySubText}>
-                Tente pesquisar por um nome diferente.
-            </Text>
+            <Text style={styles.emptyText}>Nenhum usuário encontrado.</Text>
+            <Text style={styles.emptySubText}>Tente pesquisar por um nome diferente.</Text>
         </View>
     );
 
@@ -151,7 +134,6 @@ const SearchScreen = () => {
                     placeholderTextColor={Colors.textSecondary}
                     value={searchText}
                     onChangeText={setSearchText}
-                    onSubmitEditing={handleSearch}
                     returnKeyType="search"
                 />
                 {searchText.length > 0 && (

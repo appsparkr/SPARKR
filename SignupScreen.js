@@ -1,5 +1,6 @@
 // SignupScreen.js
-import { Ionicons } from '@expo/vector-icons'; // ADICIONADO: Importação do Ionicons
+import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker'; // <--- ADICIONADO
 import { useNavigation } from '@react-navigation/native';
 import Checkbox from 'expo-checkbox';
 import Constants from 'expo-constants';
@@ -13,80 +14,94 @@ export default function SignupScreen() {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [username, setUsername] = useState('');
+    // const [fullName, setFullName] = useState(''); // <--- REMOVIDO
     const [termsAccepted, setTermsAccepted] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const { signup, authLoading } = useAuth();
+    // --- INÍCIO DAS NOVAS VARIÁVEIS DE ESTADO PARA DATA ---
+    const [dateOfBirth, setDateOfBirth] = useState(null);
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    // --- FIM DAS NOVAS VARIÁVEIS DE ESTADO PARA DATA ---
+
+    const { authLoading, signup } = useAuth(); // <--- signup ADICIONADO NOVAMENTE
     const navigation = useNavigation();
 
+    // --- NOVA FUNÇÃO PARA LIDAR COM A MUDANÇA DE DATA ---
+    const onDateChange = (event, selectedDate) => {
+        setShowDatePicker(false); // Esconde o seletor
+        if (selectedDate) {
+            setDateOfBirth(selectedDate);
+        }
+    };
+    
+    // --- handleSignUp ATUALIZADO ---
     const handleSignUp = useCallback(async () => {
         setError('');
+        console.log('SignupScreen - A iniciar validação...');
 
-        console.log('SignupScreen - A iniciar registo...');
+        if (!email || !password || !confirmPassword || !username.trim() || !dateOfBirth) {
+            Alert.alert('Erro no Registo', 'Por favor, preencha todos os campos, incluindo a data de nascimento.');
+            return;
+        }
 
-        if (!email || !password || !confirmPassword || !username.trim()) {
-            Alert.alert('Erro no Registo', 'Por favor, preencha todos os campos.');
+        // Verificação de Idade
+        const today = new Date();
+        const birthDate = new Date(dateOfBirth);
+        let age = today.getFullYear() - birthDate.getFullYear();
+        const monthDifference = today.getMonth() - birthDate.getMonth();
+        if (monthDifference < 0 || (monthDifference === 0 && today.getDate() < birthDate.getDate())) {
+            age--;
+        }
+
+        if (age < 18) {
+            Alert.alert('Registo Negado', 'Você precisa ter pelo menos 18 anos para se registar.');
             return;
         }
 
         if (!termsAccepted) {
             Alert.alert('Erro no Registo', 'Deve aceitar os Termos de Utilização e a Política de Privacidade.');
-            console.log('SignupScreen - Termos não aceites');
             return;
         }
 
         if (password !== confirmPassword) {
             Alert.alert('Erro no Registo', 'As palavras-passe não coincidem.');
-            console.log('SignupScreen - Palavras-passe não coincidem');
             return;
         }
 
-        setLoading(true);
-        try {
-            await signup(email, password);
-            console.log('SignupScreen - Registo concluído.');
+        // Lógica CORRIGIDA: Apenas navega para a próxima tela, passando os dados.
+        // A criação do utilizador acontecerá no CreateProfileScreen.
+        navigation.navigate('CreateProfile', { 
+            email, 
+            password, 
+            username, 
+            dateOfBirth: dateOfBirth.toISOString() // Passa a data como texto
+        });
 
-            // MODIFICADO: Remover a navegação explícita para 'MainTabs'.
-            // O App.js já lida com o redirecionamento para CreateProfileScreen ou MainTabs
-            // com base no estado do perfil do usuário após o signup.
-            // Apenas retorna e deixa o AuthContext/App.js fazer o trabalho.
-            console.log('SignupScreen: Registo bem-sucedido. O AuthContext/App.js irá gerir o redirecionamento.');
-            
-        } catch (err) {
-            console.error('SignupScreen - Erro no registo:', err);
-            Alert.alert('Erro no Registo', err.message || 'Erro ao criar conta. Tente novamente.');
-        } finally {
-            setLoading(false);
-            console.log('SignupScreen - A finalizar handleSignUp');
-        }
-    }, [email, password, confirmPassword, username, termsAccepted, signup]); // Removido 'navigation' das dependências, pois não é mais usado para navegação direta aqui.
+    }, [email, password, confirmPassword, username, termsAccepted, dateOfBirth, navigation]);
 
     const handleTermsLink = useCallback(() => {
-        navigation.navigate('TermsOfUse'); 
+        navigation.navigate('TermsOfUse');
     }, [navigation]);
 
     const handlePrivacyLink = useCallback(() => {
-        navigation.navigate('PrivacyPolicy'); 
+        navigation.navigate('PrivacyPolicy');
     }, [navigation]);
 
-    // Função para a seta de voltar
     const handleBack = useCallback(() => {
-        console.log('Navegando para Welcome');
-        navigation.goBack(); // Volta para a tela anterior na pilha (WelcomeScreen)
+        navigation.goBack();
     }, [navigation]);
 
-    const isButtonDisabled = !termsAccepted || !email || !password || !confirmPassword || !username.trim() || loading || authLoading;
+    // --- LÓGICA DO BOTÃO ATUALIZADA ---
+    const isButtonDisabled = !termsAccepted || !email || !password || !confirmPassword || !username.trim() || !dateOfBirth || loading || authLoading;
 
     return (
         <SafeAreaView style={styles.safeAreaContainer}>
-            {/* Cabeçalho com a seta de voltar */}
             <View style={styles.header}>
                 <TouchableOpacity onPress={handleBack} style={styles.backButton}>
                     <Ionicons name="arrow-back" size={24} color={Colors.text} />
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Registar</Text>
-                {/* Espaçador para centralizar o título */}
                 <View style={styles.placeholder} />
             </View>
 
@@ -95,6 +110,7 @@ export default function SignupScreen() {
                 <Text style={styles.description}>
                     Crie a sua conta para se conectar com a comunidade SPARKR
                 </Text>
+
                 <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>E-mail</Text>
                     <TextInput
@@ -107,6 +123,7 @@ export default function SignupScreen() {
                         onChangeText={setEmail}
                     />
                 </View>
+
                 <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Nome de Utilizador</Text>
                     <TextInput
@@ -118,6 +135,29 @@ export default function SignupScreen() {
                         onChangeText={setUsername}
                     />
                 </View>
+
+                {/* --- CAMPO "NOME COMPLETO" SUBSTITUÍDO POR "DATA DE NASCIMENTO" --- */}
+                <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Data de Nascimento</Text>
+                    <TouchableOpacity style={styles.input} onPress={() => setShowDatePicker(true)}>
+                        <Text style={dateOfBirth ? styles.dateText : styles.datePlaceholder}>
+                            {dateOfBirth ? dateOfBirth.toLocaleDateString('pt-PT') : 'Selecione a sua data'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+                
+                {/* O DatePicker é renderizado condicionalmente */}
+                {showDatePicker && (
+                    <DateTimePicker
+                        value={dateOfBirth || new Date()}
+                        mode="date"
+                        display="spinner"
+                        onChange={onDateChange}
+                        maximumDate={new Date()} // Não permite selecionar datas futuras
+                    />
+                )}
+                {/* --- FIM DA SUBSTITUIÇÃO --- */}
+
                 <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Palavra-passe</Text>
                     <TextInput
@@ -129,6 +169,7 @@ export default function SignupScreen() {
                         onChangeText={setPassword}
                     />
                 </View>
+
                 <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Confirmar Palavra-passe</Text>
                     <TextInput
@@ -150,17 +191,13 @@ export default function SignupScreen() {
                     />
                     <Text style={styles.termsText}>
                         <Text>Eu li e aceito os </Text>
-                        <Text style={styles.linkText} onPress={handleTermsLink}>
-                            Termos de Utilização
-                        </Text>
+                        <Text style={styles.linkText} onPress={handleTermsLink}>Termos de Utilização</Text>
                         <Text> e a </Text>
-                        <Text style={styles.linkText} onPress={handlePrivacyLink}>
-                            Política de Privacidade
-                        </Text>
-                        <Text>.</Text>
+                        <Text style={styles.linkText} onPress={handlePrivacyLink}>Política de Privacidade</Text>
+                        <Text>, e confirmo que tenho pelo menos 18 anos.</Text>
                     </Text>
                 </View>
-                
+
                 {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
                 <TouchableOpacity
@@ -168,7 +205,11 @@ export default function SignupScreen() {
                     disabled={isButtonDisabled}
                     onPress={handleSignUp}
                 >
-                    {loading ? <ActivityIndicator size="small" color={Colors.background} /> : <Text style={styles.signupButtonText}>Criar Conta</Text>}
+                    {loading ? (
+                        <ActivityIndicator size="small" color={Colors.background} />
+                    ) : (
+                        <Text style={styles.signupButtonText}>Criar Conta</Text>
+                    )}
                 </TouchableOpacity>
 
                 <View style={styles.divider}>
@@ -179,14 +220,12 @@ export default function SignupScreen() {
                 <TouchableOpacity style={styles.loginButton} onPress={() => navigation.navigate('Login')}>
                     <Text style={styles.loginButtonText}>Já tem uma conta? Entrar</Text>
                 </TouchableOpacity>
-                <Text style={styles.ageWarning}>
-                    Ao registar-se, confirma que tem pelo menos 18 anos de idade.
-                </Text>
             </ScrollView>
         </SafeAreaView>
     );
 }
 
+// --- NOVOS ESTILOS ADICIONADOS ---
 const styles = StyleSheet.create({
     safeAreaContainer: {
         flex: 1,
@@ -212,7 +251,7 @@ const styles = StyleSheet.create({
         padding: 5,
     },
     placeholder: {
-        width: 24 + 10, // Largura do ícone + padding para centralizar o título
+        width: 24 + 10,
     },
     scrollView: {
         flex: 1,
@@ -258,6 +297,15 @@ const styles = StyleSheet.create({
         fontSize: 16,
         borderWidth: 1,
         borderColor: Colors.border,
+        justifyContent: 'center', // Adicionado para alinhar o texto do seletor de data
+    },
+    datePlaceholder: {
+        color: Colors.textSecondary,
+        fontSize: 16,
+    },
+    dateText: {
+        color: Colors.text,
+        fontSize: 16,
     },
     termsContainer: {
         flexDirection: 'row',
@@ -338,7 +386,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
     },
     errorText: {
-        color: Colors.danger,
+        color: Colors.danger, // Corrigido para Colors.danger
         marginBottom: 10,
         textAlign: 'center',
         fontSize: 14,
